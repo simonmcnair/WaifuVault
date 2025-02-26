@@ -1,12 +1,10 @@
 import { FileRepo } from "../db/repo/FileRepo.js";
-import { Constant, Inject, Service } from "@tsed/di";
-import GlobalEnv from "../model/constants/GlobalEnv.js";
+import { Inject, Service } from "@tsed/di";
 import { EncryptionService } from "./EncryptionService.js";
 import { RecordInfoSocket } from "./socket/RecordInfoSocket.js";
 import { Logger } from "@tsed/logger";
 import { FileUtils } from "../utils/Utils.js";
 import { FileUploadModel } from "../model/db/FileUpload.model.js";
-import { FileUploadResponseDto } from "../model/dto/FileUploadResponseDto.js";
 import { BadRequest, Forbidden, NotFound } from "@tsed/exceptions";
 import { EntryEncryptionWrapper } from "../model/rest/EntryEncryptionWrapper.js";
 
@@ -15,9 +13,6 @@ import { EntryEncryptionWrapper } from "../model/rest/EntryEncryptionWrapper.js"
  */
 @Service()
 export class FileService {
-    @Constant(GlobalEnv.BASE_URL)
-    private readonly baseUrl: string;
-
     public constructor(
         @Inject() private repo: FileRepo,
         @Inject() private encryptionService: EncryptionService,
@@ -27,7 +22,7 @@ export class FileService {
 
     public async processDelete(tokens: string[]): Promise<boolean> {
         let deleted = false;
-        const entries = await this.repo.getEntry(tokens);
+        const entries = await this.repo.getEntries(tokens);
         if (entries.length === 0) {
             return false;
         }
@@ -46,7 +41,13 @@ export class FileService {
         const fileDeletePArr = entries.map(entry => {
             return FileUtils.deleteFile(entry.fullFileNameOnSystem, true);
         });
-        await Promise.all(fileDeletePArr);
+        await Promise.all(fileDeletePArr).catch(e => {
+            if (e.message.startsWith("EPERM: operation not permitted")) {
+                // this means there is a lock/handle on the file.
+                // it will be cleaned up when the file cleaner runs, just leave it
+                this.logger.warn(e);
+            }
+        });
     }
 
     public async getEntry(
@@ -68,10 +69,11 @@ export class FileService {
             this.resourceNotFound(resource);
         }
 
-        if (entry.hasExpired) {
+        if (entry.hasExpired || !(await FileUtils.fileExists(entry.fullLocationOnDisk))) {
             await this.processDelete([entry.token]);
             this.resourceNotFound(resource);
         }
+
         if (entry.settings?.password) {
             if (!password) {
                 throw new Forbidden(`${entry?.encrypted ? "Encrypted" : "Protected"} file requires a password`);
@@ -100,8 +102,8 @@ export class FileService {
         return !!entry.settings?.password;
     }
 
-    public async getFileInfo(token: string, humanReadable: boolean): Promise<FileUploadResponseDto> {
-        const foundEntries = await this.repo.getEntry([token]);
+    public async getFileInfo(token: string): Promise<FileUploadModel> {
+        const foundEntries = await this.repo.getEntries([token]);
         if (foundEntries.length !== 1) {
             this.unknownToken(token);
         }
@@ -110,7 +112,7 @@ export class FileService {
             await this.processDelete([entry.token]);
             this.unknownToken(token);
         }
-        return FileUploadResponseDto.fromModel(entry, this.baseUrl, humanReadable);
+        return entry;
     }
 
     private resourceNotFound(resource: string): never {

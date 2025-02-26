@@ -7,10 +7,9 @@ import { Builder, type IBuilder } from "builder-pattern";
 import path from "node:path";
 import fs from "node:fs/promises";
 import crypto from "node:crypto";
-import { FileUploadResponseDto } from "../model/dto/FileUploadResponseDto.js";
 import GlobalEnv from "../model/constants/GlobalEnv.js";
 import { Logger } from "@tsed/logger";
-import { EntrySettings, fileUploadProps } from "../utils/typeings.js";
+import { EntrySettings, FileUploadProps } from "../utils/typeings.js";
 import { BadRequest, Exception, InternalServerError } from "@tsed/exceptions";
 import { FileUtils, ObjectUtils } from "../utils/Utils.js";
 import TimeUnit from "../model/constants/TimeUnit.js";
@@ -25,12 +24,10 @@ import { BucketService } from "./BucketService.js";
 import BucketType from "../model/constants/BucketType.js";
 import { FileFilterManager } from "../manager/FileFilterManager.js";
 import { MimeService } from "./MimeService.js";
+import { uuid } from "../utils/uuidUtils.js";
 
 @Service()
 export class FileUploadService {
-    @Constant(GlobalEnv.BASE_URL)
-    private readonly baseUrl: string;
-
     @Constant(GlobalEnv.UPLOAD_SECRET)
     private readonly secret?: string;
 
@@ -53,7 +50,7 @@ export class FileUploadService {
         password,
         secretToken,
         bucketToken,
-    }: fileUploadProps): Promise<[FileUploadResponseDto, boolean]> {
+    }: FileUploadProps): Promise<[FileUploadModel, boolean]> {
         const { expires } = options;
         let resourcePath: string | undefined;
         let originalFileName: string | undefined;
@@ -63,16 +60,16 @@ export class FileUploadService {
             const existingFileModel = await this.handleExistingFileModel(resourcePath, checksum, ip);
 
             if (existingFileModel) {
+                await FileUtils.deleteFile(path.basename(resourcePath), true);
                 if (existingFileModel.hasExpired) {
                     await this.fileService.processDelete([existingFileModel.token]);
                 } else {
-                    return [FileUploadResponseDto.fromModel(existingFileModel, this.baseUrl, true), true];
+                    return [existingFileModel, true];
                 }
             }
 
-            const token = crypto.randomUUID();
+            const token = uuid();
             const uploadEntry = Builder(FileUploadModel).ip(ip).token(token);
-            [resourcePath, originalFileName] = await this.determineResourcePathAndFileName(source);
 
             await this.filterFile(resourcePath);
 
@@ -83,8 +80,7 @@ export class FileUploadService {
             uploadEntry.fileSize(fileSize);
 
             if (bucketToken) {
-                const bucket = await this.bucketService.getBucket(bucketToken);
-                if (!bucket) {
+                if (!(await this.bucketService.bucketExists(bucketToken))) {
                     throw new BadRequest(`Bucket with token ${bucketToken} does not exist`);
                 }
                 uploadEntry.bucketToken(bucketToken);
@@ -122,7 +118,7 @@ export class FileUploadService {
 
             await this.recordInfoSocket.emit();
 
-            return [FileUploadResponseDto.fromModel(savedEntry, this.baseUrl, true), false];
+            return [savedEntry, false];
         } catch (e) {
             if (e instanceof Exception) {
                 throw new ProcessUploadException(e.status, e.message, resourcePath, e);
@@ -187,7 +183,7 @@ export class FileUploadService {
     private async buildEntrySettings({
         password,
         hideFilename,
-        one_time_download,
+        oneTimeDownload,
     }: FileUploadQueryParameters & { password?: string }): Promise<EntrySettings | null> {
         const retObj: EntrySettings = {};
         if (password) {
@@ -196,14 +192,14 @@ export class FileUploadService {
         if (hideFilename) {
             retObj["hideFilename"] = hideFilename;
         }
-        if (one_time_download) {
-            retObj["oneTimeDownload"] = one_time_download;
+        if (oneTimeDownload) {
+            retObj["oneTimeDownload"] = oneTimeDownload;
         }
         return Object.keys(retObj).length === 0 ? null : retObj;
     }
 
-    public async modifyEntry(token: string, dto: EntryModificationDto): Promise<FileUploadResponseDto> {
-        const [entryToModify] = await this.repo.getEntry([token]);
+    public async modifyEntry(token: string, dto: EntryModificationDto): Promise<FileUploadModel> {
+        const [entryToModify] = await this.repo.getEntries([token]);
         if (!entryToModify) {
             throw new BadRequest(`Unknown token ${token}`);
         }
@@ -252,8 +248,7 @@ export class FileUploadService {
             const fileSize = await FileUtils.getFileSize(entryToModify);
             builder.expires(FileUtils.getExpiresBySize(fileSize, entryToModify.createdAt.getTime()));
         }
-        const updatedEntry = await this.repo.saveEntry(builder.build());
-        return FileUploadResponseDto.fromModel(updatedEntry, this.baseUrl);
+        return this.repo.saveEntry(builder.build());
     }
 
     private async calculateCustomExpires(
@@ -263,15 +258,15 @@ export class FileUploadService {
         bucketToken?: string,
     ): Promise<void> {
         let value: number = ObjectUtils.getNumber(expires);
-        let timeFactor: TimeUnit = TimeUnit.minutes;
+        let timeFactor: TimeUnit = TimeUnit.MINUTES;
 
         if (value === 0) {
             throw new BadRequest(`Unable to parse expire value from ${expires}`);
         }
         if (expires.includes("d")) {
-            timeFactor = TimeUnit.days;
+            timeFactor = TimeUnit.DAYS;
         } else if (expires.includes("h")) {
-            timeFactor = TimeUnit.hours;
+            timeFactor = TimeUnit.HOURS;
         }
         value = ObjectUtils.convertToMilli(value, timeFactor);
 

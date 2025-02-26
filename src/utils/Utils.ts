@@ -6,6 +6,12 @@ import type { Request } from "express";
 import fs from "node:fs/promises";
 import type { PlatformMulterFile } from "@tsed/common";
 import { FileUploadModel } from "../model/db/FileUpload.model.js";
+import { isFormatSupportedByFfmpeg } from "./ffmpgWrapper.js";
+import { WorkerResponse } from "./typeings.js";
+import { Worker } from "node:worker_threads";
+import * as crypto from "node:crypto";
+import { constant } from "@tsed/di";
+import GlobalEnv from "../model/constants/GlobalEnv.js";
 
 export class ObjectUtils {
     public static getNumber(source: string): number {
@@ -38,11 +44,11 @@ export class ObjectUtils {
         return bytes.toFixed(dp) + " " + units[u];
     }
 
-    public static timeToHuman(value: number, timeUnit: TimeUnit = TimeUnit.milliseconds): string {
+    public static timeToHuman(value: number, timeUnit: TimeUnit = TimeUnit.MILLI_SECONDS): string {
         let seconds: number;
-        if (timeUnit === TimeUnit.milliseconds) {
+        if (timeUnit === TimeUnit.MILLI_SECONDS) {
             seconds = Math.round(value / 1000);
-        } else if (timeUnit !== TimeUnit.seconds) {
+        } else if (timeUnit !== TimeUnit.SECONDS) {
             seconds = Math.round(ObjectUtils.convertToMilli(value, timeUnit) / 1000);
         } else {
             seconds = Math.round(value);
@@ -70,21 +76,21 @@ export class ObjectUtils {
 
     public static convertToMilli(value: number, unit: TimeUnit): number {
         switch (unit) {
-            case TimeUnit.seconds:
+            case TimeUnit.SECONDS:
                 return value * 1000;
-            case TimeUnit.minutes:
+            case TimeUnit.MINUTES:
                 return value * 60000;
-            case TimeUnit.hours:
+            case TimeUnit.HOURS:
                 return value * 3600000;
-            case TimeUnit.days:
+            case TimeUnit.DAYS:
                 return value * 86400000;
-            case TimeUnit.weeks:
+            case TimeUnit.WEEKS:
                 return value * 604800000;
-            case TimeUnit.months:
+            case TimeUnit.MONTHS:
                 return value * 2629800000;
-            case TimeUnit.years:
+            case TimeUnit.YEARS:
                 return value * 31556952000;
-            case TimeUnit.decades:
+            case TimeUnit.DECADES:
                 return value * 315569520000;
             default:
                 return -1;
@@ -103,12 +109,36 @@ export class ObjectUtils {
 }
 
 export class FileUtils {
-    private static readonly MIN_EXPIRATION = 30 * 24 * 60 * 60 * 1000;
-    private static readonly MAX_EXPIRATION = 365 * 24 * 60 * 60 * 1000;
+    private static readonly minExpiration = 30 * 24 * 60 * 60 * 1000;
+    private static readonly maxExpiration = 365 * 24 * 60 * 60 * 1000;
 
     public static isFileExpired(entry: FileUploadModel): boolean {
         const expired = FileUtils.getTimeLeft(entry);
         return expired === null ? false : expired <= 0;
+    }
+
+    public static isImage(file: FileUploadModel): boolean {
+        return file.mediaType?.startsWith("image/") ?? false;
+    }
+
+    public static isVideo(file: FileUploadModel): boolean {
+        return file.mediaType?.startsWith("video/") ?? false;
+    }
+
+    public static isValidForThumbnail(file: FileUploadModel): boolean {
+        return (
+            (FileUtils.isImage(file) || FileUtils.isVideoSupportedByFfmpeg(file)) && file.fileProtectionLevel === "None"
+        );
+    }
+
+    public static isVideoSupportedByFfmpeg(file: FileUploadModel): boolean {
+        if (!FileUtils.isVideo(file)) {
+            return false;
+        }
+        if (file.fileExtension) {
+            return isFormatSupportedByFfmpeg(file.fileExtension);
+        }
+        return false;
     }
 
     public static getExtension(file: string): string {
@@ -121,10 +151,10 @@ export class FileUtils {
 
     public static getTimeLeftBySize(filesize: number): number {
         const ttl = Math.floor(
-            (FileUtils.MIN_EXPIRATION - FileUtils.MAX_EXPIRATION) *
+            (FileUtils.minExpiration - FileUtils.maxExpiration) *
                 Math.pow(filesize / (Number.parseInt(process.env.FILE_SIZE_UPLOAD_LIMIT_MB!) * 1048576) - 1, 3),
         );
-        return ttl < FileUtils.MIN_EXPIRATION ? FileUtils.MIN_EXPIRATION : ttl;
+        return ttl < FileUtils.minExpiration ? FileUtils.minExpiration : ttl;
     }
 
     public static getExpiresBySize(filesize: number, dateToUse = Date.now()): number {
@@ -177,7 +207,12 @@ export class NetworkUtils {
         } else {
             ip = req.ip as string;
         }
-        return this.extractIp(ip);
+        const extractedIp = this.extractIp(ip);
+        const salt = constant(GlobalEnv.IP_SALT, "");
+        return crypto
+            .createHash("sha256")
+            .update(extractedIp + salt)
+            .digest("hex");
     }
 
     private static extractIp(ipString: string): string {
@@ -193,6 +228,36 @@ export class NetworkUtils {
             .join(":")
             .replace(/\[/, "")
             .replace(/]/, "");
+    }
+}
+
+export class WorkerUtils {
+    public static newWorker<T = void>(file: string | URL, data: Record<string, unknown>): [Promise<T>, Worker] {
+        if (typeof file === "string") {
+            // if string, the file ust be relative to the `workers` folder
+            file = new URL(`../workers/${file}`, import.meta.url);
+        }
+        const worker = new Worker(file, {
+            workerData: data,
+        });
+
+        const p: Promise<T> = new Promise((resolve, reject): void => {
+            worker.on("message", (message: WorkerResponse<T>) => {
+                if (message.success) {
+                    resolve(message.data);
+                } else {
+                    reject(new Error(message.error));
+                }
+            });
+            worker.on("error", reject);
+            worker.on("exit", code => {
+                if (code !== 0) {
+                    reject(new Error(`Worker stopped with exit code ${code}`));
+                }
+            });
+        });
+
+        return [p, worker];
     }
 }
 

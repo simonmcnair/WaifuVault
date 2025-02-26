@@ -2,66 +2,44 @@ import { Inject, Service } from "@tsed/di";
 import { FileDao } from "../dao/FileDao.js";
 import { FileUploadModel } from "../../model/db/FileUpload.model.js";
 import Path from "node:path";
-import { ObjectUtils } from "../../utils/Utils.js";
+import { ThumbnailCacheRepo } from "./ThumbnailCacheRepo.js";
 
 @Service()
 export class FileRepo {
-    private readonly entryCache: Map<string, FileUploadModel> = new Map();
+    public constructor(
+        @Inject() private fileDao: FileDao,
+        @Inject() private thumbnailCacheRepo: ThumbnailCacheRepo,
+    ) {}
 
-    public constructor(@Inject() private fileDao: FileDao) {}
-
-    public async saveEntry(entry: FileUploadModel): Promise<FileUploadModel> {
-        const res = await this.fileDao.saveEntry(entry);
-        this.entryCache.set(entry.token, res);
-        return res;
+    public saveEntry(entry: FileUploadModel): Promise<FileUploadModel> {
+        return this.fileDao.saveEntry(entry);
     }
 
-    public async getEntry(tokens: string[]): Promise<FileUploadModel[]> {
-        const ret: FileUploadModel[] = [];
-        const tokensClone = [...tokens];
-        ObjectUtils.removeObjectFromArray(tokensClone, token => {
-            const fromCache = this.entryCache.get(token);
-            if (fromCache) {
-                ret.push(fromCache);
-                return true;
-            }
-            return false;
-        });
-        if (tokensClone.length > 0) {
-            const result = await this.fileDao.getEntry(tokensClone);
-            ret.push(...result);
-            for (const fileUploadModel of result) {
-                this.entryCache.set(fileUploadModel.token, fileUploadModel);
-            }
-        }
-        return ret;
+    public saveEntries(entries: FileUploadModel[]): Promise<FileUploadModel[]> {
+        return this.fileDao.saveEntries(entries);
     }
 
-    public async getEntryByFileName(fileName: string): Promise<FileUploadModel | null> {
-        const fromCache = this.obtainOneFromCacheBasedOnProp("fileName", fileName);
-        if (fromCache) {
-            return Promise.resolve(fromCache);
-        }
-        const res = await this.fileDao.getEntryFileName(Path.parse(fileName).name);
-        if (!res) {
-            return null;
-        }
-        this.entryCache.set(res.token, res);
-        return res;
+    public getEntries(tokens: string[], loadRelations = true): Promise<FileUploadModel[]> {
+        return this.fileDao.getEntries(tokens, loadRelations);
+    }
+
+    public getEntriesByBucket(privateAlbumToken: string): Promise<FileUploadModel[]> {
+        return this.fileDao.getEntriesByBucket(privateAlbumToken);
+    }
+
+    public getEntryByFileName(fileName: string): Promise<FileUploadModel | null> {
+        return this.fileDao.getEntryFileName(Path.parse(fileName).name);
     }
 
     public getEntriesFromChecksum(hash: string): Promise<FileUploadModel[]> {
-        // bypass cache
         return this.fileDao.getEntriesFromChecksum(hash);
     }
 
     public getExpiredFiles(): Promise<FileUploadModel[]> {
-        // bypass cache
         return this.fileDao.getExpiredFiles();
     }
 
     public getAllEntries(ids: number[] = []): Promise<FileUploadModel[]> {
-        // bypass cache
         return this.fileDao.getAllEntries(ids);
     }
 
@@ -71,21 +49,12 @@ export class FileRepo {
     }
 
     public getAllEntriesForIp(ip: string): Promise<FileUploadModel[]> {
-        // bypass cache
         return this.fileDao.getAllEntriesForIp(ip);
     }
 
     public async incrementViews(token: string): Promise<number> {
         await this.fileDao.incrementViews(token);
-        const entryCache = this.entryCache.get(token);
-        if (entryCache) {
-            // update the cache too
-            entryCache.views = ++entryCache.views;
-            this.entryCache.set(token, entryCache);
-            return entryCache.views;
-        } else {
-            return this.getEntry([token]).then(entries => entries[0].views);
-        }
+        return this.getEntries([token]).then(entries => entries[0].views);
     }
 
     public getAllEntriesOrdered(
@@ -100,10 +69,9 @@ export class FileRepo {
         return this.fileDao.getAllEntriesOrdered(start, records, sortColumn, sortDir, search, bucket);
     }
 
-    public deleteEntries(tokens: string[]): Promise<boolean> {
-        for (const token of tokens) {
-            this.entryCache.delete(token);
-        }
+    public async deleteEntries(tokens: string[]): Promise<boolean> {
+        const entries = await this.getEntries(tokens);
+        await this.thumbnailCacheRepo.deleteThumbsIfExist(entries);
         return this.fileDao.deleteEntries(tokens);
     }
 
@@ -115,22 +83,7 @@ export class FileRepo {
         return this.fileDao.getSearchRecordCount(search, bucket);
     }
 
-    private obtainOneFromCacheBasedOnProp(prop: keyof FileUploadModel, value: string): FileUploadModel | null {
-        for (const [, entry] of this.entryCache) {
-            if (entry[prop] === value) {
-                return entry;
-            }
-        }
-        return null;
-    }
-
-    public invalidateCache(tokens?: string[]): void {
-        if (tokens) {
-            for (const token of tokens) {
-                this.entryCache.delete(token);
-            }
-        } else {
-            this.entryCache.clear();
-        }
+    public async clearCache(token: string | string[] | null): Promise<void> {
+        await this.fileDao.clearCache(token);
     }
 }

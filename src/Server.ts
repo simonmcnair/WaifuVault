@@ -6,8 +6,8 @@ import "@tsed/ajv";
 import "@tsed/swagger";
 import "@tsed/socketio";
 import "@tsed/platform-log-request";
-import { createAdapter } from "@socket.io/redis-adapter";
-import { createClient } from "redis";
+import "@tsed/platform-cache";
+import "@tsed/ioredis";
 // custom index imports
 import "./protocols/index.js";
 import "./filters/index.js";
@@ -17,7 +17,9 @@ import "./services/FileCleaner.js";
 import * as views from "./controllers/views/index.js";
 import * as adminViews from "./controllers/secure/index.js";
 import * as globalMiddleware from "./middleware/global/index.js";
+import "./platformOverrides/index.js";
 import { FileServerController } from "./controllers/serve/FileServerController.js";
+import "./redis/Connection.js";
 // import * as secureViews from "./controllers/secureViews";
 // custom index imports end
 import { config } from "./config/index.js";
@@ -26,14 +28,12 @@ import bodyParser from "body-parser";
 import cookieParser from "cookie-parser";
 import session from "express-session";
 import methodOverride from "method-override";
-import { isProduction } from "./config/envs/index.js";
+import { isGhAction, isProduction } from "./config/envs/index.js";
 import helmet from "helmet";
 import process from "process";
 import cors from "cors";
-import { TypeormStore } from "connect-typeorm";
-import { SQLITE_DATA_SOURCE } from "./model/di/tokens.js";
+import { REDIS_CONNECTION, SQLITE_DATA_SOURCE } from "./model/di/tokens.js";
 import { DataSource } from "typeorm";
-import { SessionModel } from "./model/db/Session.model.js";
 import compression from "compression";
 import GlobalEnv from "./model/constants/GlobalEnv.js";
 import multer from "multer";
@@ -47,6 +47,13 @@ import { ExpressRateLimitStoreModel } from "./model/db/ExpressRateLimitStore.mod
 import { Exception, TooManyRequests } from "@tsed/exceptions";
 import { Logger } from "@tsed/logger";
 import { DefaultRenderException } from "./model/rest/DefaultRenderException.js";
+import { initRedisProvider, type RedisConnection } from "./redis/Connection.js";
+import { createShardedAdapter } from "@socket.io/redis-adapter";
+import { createClient } from "redis";
+import { RedisStore } from "connect-redis";
+import { uuid } from "./utils/uuidUtils.js";
+
+const socketIoStatus = process.env.HOME_PAGE_FILE_COUNTER ? process.env.HOME_PAGE_FILE_COUNTER : "dynamic";
 
 const opts: Partial<TsED.Configuration> = {
     ...config,
@@ -64,12 +71,13 @@ const opts: Partial<TsED.Configuration> = {
             fileSize: Number.parseInt(process.env.FILE_SIZE_UPLOAD_LIMIT_MB as string) * 1048576,
         },
         storage: multer.diskStorage({
-            destination: (req, file, cb) => {
+            destination: (_, _2, cb) => {
                 cb(null, filesDir);
             },
-            filename: (req, file, cb) => {
+            filename: (_, file, cb) => {
                 const ext = FileUtils.getExtension(file.originalname);
-                const fileName = ext ? `${Date.now()}.${ext}` : `${Date.now()}`;
+                const token = uuid();
+                const fileName = ext ? `${token}.${ext}` : token;
                 return cb(null, fileName);
             },
         }),
@@ -102,11 +110,14 @@ const opts: Partial<TsED.Configuration> = {
             },
         ],
     },
-    socketIO: {
-        cors: {
-            origin: process.env.BASE_URL,
-        },
-    },
+    socketIO:
+        socketIoStatus === "dynamic"
+            ? {
+                  cors: {
+                      origin: process.env.BASE_URL,
+                  },
+              }
+            : undefined,
     middlewares: [
         helmet({
             contentSecurityPolicy: false,
@@ -156,7 +167,7 @@ const opts: Partial<TsED.Configuration> = {
     exclude: ["**/*.spec.ts"],
 };
 
-await initRedis();
+await initRedis(opts);
 
 @Configuration(opts)
 export class Server implements BeforeRoutesInit {
@@ -164,6 +175,7 @@ export class Server implements BeforeRoutesInit {
         @Inject() private app: PlatformApplication,
         @Inject(SQLITE_DATA_SOURCE) private ds: DataSource,
         @Inject() private logger: Logger,
+        @Inject(REDIS_CONNECTION) private redis: RedisConnection,
     ) {}
 
     @Constant(GlobalEnv.SESSION_KEY)
@@ -190,10 +202,11 @@ export class Server implements BeforeRoutesInit {
                 session({
                     secret: this.sessionKey,
                     resave: false,
-                    store: new TypeormStore({
-                        cleanupLimit: 2,
-                    }).connect(this.ds.getRepository(SessionModel)),
                     saveUninitialized: false,
+                    store: new RedisStore({
+                        client: this.redis,
+                        prefix: "waifu_session:",
+                    }),
                     cookie: {
                         path: "/",
                         httpOnly: true,
@@ -247,11 +260,35 @@ export class Server implements BeforeRoutesInit {
     }
 }
 
-async function initRedis(): Promise<void> {
-    if (process.env.REDIS_URI) {
-        const pubClient = createClient({ url: process.env.SOCKET_IO_REDIS });
-        const subClient = pubClient.duplicate();
-        await Promise.all([pubClient.connect(), subClient.connect()]);
-        opts.socketIO!.adapter = createAdapter(pubClient, subClient);
+async function initRedis(options: Partial<TsED.Configuration>): Promise<void> {
+    if (isGhAction) {
+        return;
     }
+    if (!process.env.REDIS_URI) {
+        throw new Error("REDIS_URI is not set");
+    }
+    initRedisProvider();
+    const url = new URL(process.env.REDIS_URI);
+
+    if (socketIoStatus === "dynamic") {
+        const pubClient = createClient({
+            url: process.env.REDIS_URI as string,
+        });
+        const subClient = pubClient.duplicate();
+
+        await Promise.all([pubClient.connect(), subClient.connect()]);
+        opts.socketIO!.adapter = createShardedAdapter(pubClient, subClient);
+    }
+
+    options["ioredis"] = [
+        {
+            name: "default",
+            cache: true,
+            host: url.hostname,
+            port: Number.parseInt(url.port),
+        },
+    ];
+    options["cache"] = {
+        ttl: 300,
+    };
 }

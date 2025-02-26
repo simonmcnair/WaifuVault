@@ -2,11 +2,11 @@ import { FileRepo } from "../db/repo/FileRepo.js";
 import { Inject, Service } from "@tsed/di";
 import { IpBlackListRepo } from "../db/repo/IpBlackListRepo.js";
 import { FileService } from "./FileService.js";
-import { AdminFileEntryDto } from "../model/dto/AdminFileEntryDto.js";
 import { SettingsDao } from "../db/dao/SettingsDao.js";
 import GlobalEnv from "../model/constants/GlobalEnv.js";
 import { AbstractAdminService } from "./AbstractAdminService.js";
 import { IpBlackListModel } from "../model/db/IpBlackList.model.js";
+import { FileUploadModel } from "../model/db/FileUpload.model.js";
 
 /**
  * This is an admin service that will work when logged in as a user
@@ -22,20 +22,19 @@ export class UserAdminService extends AbstractAdminService {
         super(ipBlackListRepo, repo, fileService, settingsDao.getSetting(GlobalEnv.BASE_URL)!);
     }
 
-    public override async getAllEntries(): Promise<AdminFileEntryDto[]> {
+    public override async getAllEntries(): Promise<FileUploadModel[]> {
         const allEntries = await this.repo.getAllEntries();
-        return this.buildFileEntryDtos(allEntries.filter(entry => !entry.hasExpired));
+        return allEntries.filter(e => !e.hasExpired);
     }
 
-    public override async getPagedEntries(
+    public override getPagedEntries(
         start: number,
         length: number,
         sortColumn = "id",
         sortDir = "ASC",
         search?: string,
-    ): Promise<AdminFileEntryDto[]> {
-        const entries = await this.repo.getAllEntriesOrdered(start, length, sortColumn, sortDir, search);
-        return this.buildFileEntryDtos(entries.filter(entry => !entry.hasExpired));
+    ): Promise<FileUploadModel[]> {
+        return this.repo.getAllEntriesOrdered(start, length, sortColumn, sortDir, search);
     }
 
     public getAllBlockedIps(): Promise<IpBlackListModel[]> {

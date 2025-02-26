@@ -1,7 +1,8 @@
-import { Property } from "@tsed/schema";
+import { CollectionOf, Property } from "@tsed/schema";
 import { Builder } from "builder-pattern";
-import { AdminFileEntryDto } from "./AdminFileEntryDto.js";
+import { AdminFileData } from "./AdminData.js";
 import { FileUtils } from "../../utils/Utils.js";
+import { IpBlockedAwareFileEntry } from "../../utils/typeings.js";
 
 export class StatsDto {
     @Property()
@@ -14,9 +15,10 @@ export class StatsDto {
     public totalFileSize: number;
 
     @Property()
-    public entries: AdminFileEntryDto[];
+    @CollectionOf(AdminFileData)
+    public entries: AdminFileData[];
 
-    public static async buildStats(entries: AdminFileEntryDto[]): Promise<StatsDto> {
+    public static async buildStats(entries: AdminFileData[]): Promise<StatsDto> {
         const realFiles = await FileUtils.getFilesCount();
         const fileSizes = entries.reduce((acc, currentValue) => acc + currentValue.fileSize, 0);
         const statsBuilder = Builder(StatsDto)
@@ -26,4 +28,9 @@ export class StatsDto {
             .entries(entries);
         return statsBuilder.build();
     }
+}
+
+export class StatsModel {
+    @Property()
+    public files: IpBlockedAwareFileEntry[];
 }

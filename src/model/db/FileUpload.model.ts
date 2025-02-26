@@ -1,9 +1,14 @@
-import { Column, Entity, Index, JoinColumn, ManyToOne } from "typeorm";
+import { Column, Entity, Index, JoinColumn, ManyToOne, OneToOne } from "typeorm";
 import { AbstractModel } from "./AbstractModel.js";
 import { filesDir, FileUtils } from "../../utils/Utils.js";
 import type { EntrySettings, ProtectionLevel } from "../../utils/typeings.js";
 import path from "node:path";
 import type { BucketModel } from "./Bucket.model.js";
+import { AlbumModel } from "./Album.model.js";
+import { constant } from "@tsed/di";
+import GlobalEnv from "../constants/GlobalEnv.js";
+import type { ThumbnailCacheModel } from "./ThumbnailCache.model.js";
+import { ColumnNumericTransformer } from "../../utils/dbUtils.js";
 
 @Entity()
 @Index(["token"], {
@@ -32,11 +37,11 @@ export class FileUploadModel extends AbstractModel {
     public checksum: string;
 
     @Column({
-        nullable: false,
+        nullable: true,
         type: "text",
         unique: false,
     })
-    public ip: string;
+    public ip: string | null;
 
     @Column({
         nullable: false,
@@ -55,15 +60,17 @@ export class FileUploadModel extends AbstractModel {
 
     @Column({
         nullable: false,
-        type: "integer",
+        type: "numeric",
         unique: false,
+        transformer: new ColumnNumericTransformer<FileUploadModel>("fileSize"),
     })
     public fileSize: number;
 
     @Column({
         nullable: true,
-        type: "integer",
+        type: "numeric",
         unique: false,
+        transformer: new ColumnNumericTransformer<FileUploadModel>("expires"),
     })
     public expires: number | null;
 
@@ -94,6 +101,12 @@ export class FileUploadModel extends AbstractModel {
     public bucketToken: string | null;
 
     @Column({
+        nullable: true,
+        type: "text",
+    })
+    public albumToken: string | null;
+
+    @Column({
         nullable: false,
         default: 0,
     })
@@ -106,7 +119,23 @@ export class FileUploadModel extends AbstractModel {
         name: "bucketToken",
         referencedColumnName: "bucketToken",
     })
-    public bucket: BucketModel;
+    public bucket: Promise<BucketModel | null>;
+
+    @ManyToOne("AlbumModel", "files", {
+        ...AbstractModel.cascadeOps,
+    })
+    @JoinColumn({
+        name: "albumToken",
+        referencedColumnName: "albumToken",
+    })
+    public album: Promise<AlbumModel | null>;
+
+    /**
+     * Be careful when doing this, as this will bypass redis and go directly to the DB, it is best to use the ThumbnailCacheRepo
+     */
+    @OneToOne("ThumbnailCacheModel", "file")
+    @JoinColumn()
+    public thumbnailCache: Promise<ThumbnailCacheModel | null>;
 
     public get expiresIn(): number | null {
         if (this.expires === null) {
@@ -146,5 +175,31 @@ export class FileUploadModel extends AbstractModel {
      */
     public get fullLocationOnDisk(): string {
         return path.resolve(`${filesDir}/${this.fullFileNameOnSystem}`);
+    }
+
+    public getPublicUrl(): string {
+        const baseUrl = constant(GlobalEnv.BASE_URL) as string;
+        let url: string;
+        if (this.settings?.hideFilename || !this.originalFileName) {
+            url = `${baseUrl}/f/${this.fullFileNameOnSystem}`;
+        } else {
+            let { originalFileName } = this;
+            if (originalFileName.startsWith("/")) {
+                originalFileName = originalFileName.substring(1);
+            }
+            url = `${baseUrl}/f/${this.fileName}/${originalFileName}`;
+        }
+        return encodeURI(url);
+    }
+
+    public get parsedFileName(): string {
+        if (this.settings?.hideFilename || !this.originalFileName) {
+            return this.fullFileNameOnSystem;
+        }
+        let { originalFileName } = this;
+        if (originalFileName.startsWith("/")) {
+            originalFileName = originalFileName.substring(1);
+        }
+        return originalFileName;
     }
 }

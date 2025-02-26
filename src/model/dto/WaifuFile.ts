@@ -1,8 +1,9 @@
 import { Default, Description, Name, Nullable, Property } from "@tsed/schema";
 import { FileUploadModel } from "../db/FileUpload.model.js";
-import { Builder } from "builder-pattern";
+import { Builder, IBuilder } from "builder-pattern";
 import { ObjectUtils } from "../../utils/Utils.js";
 import { EntrySettings } from "../../utils/typeings.js";
+import { AlbumInfo } from "../rest/AlbumInfo.js";
 
 class ResponseOptions implements Required<Omit<EntrySettings, "password">> {
     @Property(Boolean)
@@ -21,9 +22,9 @@ class ResponseOptions implements Required<Omit<EntrySettings, "password">> {
     public protected = false;
 }
 
-@Name("WaifuResponse")
+@Name("WaifuFile")
 @Description("This is a standard response for the service, containing info about the entry")
-export class FileUploadResponseDto {
+export class WaifuFile {
     @Property()
     @Description("Used for file info and deleting")
     public token: string;
@@ -31,6 +32,10 @@ export class FileUploadResponseDto {
     @Property()
     @Description("Location of the uploaded file")
     public url: string;
+
+    @Property()
+    @Description("The public ID of this file")
+    public id: number;
 
     @Property()
     @Description("How many times this file was downloaded")
@@ -44,19 +49,32 @@ export class FileUploadResponseDto {
     @Property()
     @Description("How long this file will exist for")
     @Nullable(Number, String)
-    @Default(Number)
+    @Default(null)
     public retentionPeriod: string | number | null = null;
 
     @Property()
     @Description("The options for this entry")
     public options: ResponseOptions;
 
-    public static fromModel(fileUploadModel: FileUploadModel, baseUrl: string, format = false): FileUploadResponseDto {
-        const builder = Builder(FileUploadResponseDto)
+    public album: AlbumInfo | null = null;
+
+    public static fromModel<T extends WaifuFile>(
+        fileUploadModel: FileUploadModel,
+        format: boolean,
+        builderToUse?: IBuilder<T>,
+    ): WaifuFile {
+        let builder: IBuilder<T>;
+        if (builderToUse) {
+            builder = builderToUse;
+        } else {
+            builder = Builder<T>(WaifuFile as unknown as T);
+        }
+        builder
             .token(fileUploadModel.token)
+            .id(fileUploadModel.id)
             .bucket(fileUploadModel.bucketToken ?? null)
             .views(fileUploadModel.views)
-            .url(FileUploadResponseDto.getUrl(fileUploadModel, baseUrl));
+            .url(fileUploadModel.getPublicUrl());
         const expiresIn = fileUploadModel.expiresIn;
         if (format && expiresIn !== null) {
             builder.retentionPeriod(ObjectUtils.timeToHuman(expiresIn));
@@ -64,19 +82,8 @@ export class FileUploadResponseDto {
             builder.retentionPeriod(fileUploadModel.expiresIn);
         }
 
-        builder.options(FileUploadResponseDto.makeOptions(fileUploadModel.settings));
+        builder.options(WaifuFile.makeOptions(fileUploadModel.settings));
         return builder.build();
-    }
-
-    private static getUrl(fileUploadModel: FileUploadModel, baseUrl: string): string {
-        if (fileUploadModel.settings?.hideFilename || !fileUploadModel.originalFileName) {
-            return `${baseUrl}/f/${fileUploadModel.fullFileNameOnSystem}`;
-        }
-        let { originalFileName } = fileUploadModel;
-        if (originalFileName.startsWith("/")) {
-            originalFileName = originalFileName.substring(1);
-        }
-        return `${baseUrl}/f/${fileUploadModel.fileName}/${originalFileName}`;
     }
 
     private static makeOptions(settings: EntrySettings | null): ResponseOptions {
@@ -89,5 +96,26 @@ export class FileUploadResponseDto {
         options.protected(!!settings.password);
 
         return options.build();
+    }
+}
+
+@Name("WaifuFileWithAlbum")
+@Description("This is a standard response for the service, containing info about the entry and the album it belongs to")
+export class WaifuFileWithAlbum extends WaifuFile {
+    @Property()
+    @Description("The album that this file belongs to")
+    @Nullable(AlbumInfo)
+    public override album: AlbumInfo | null = null;
+
+    public static async fromModelAlbum(fileUploadModel: FileUploadModel, format: boolean): Promise<WaifuFileWithAlbum> {
+        const album = await fileUploadModel.album;
+
+        const builder = Builder(WaifuFileWithAlbum);
+        if (album) {
+            builder.album(AlbumInfo.fromModel(album));
+        } else {
+            builder.album(null);
+        }
+        return WaifuFile.fromModel(fileUploadModel, format, builder) as WaifuFileWithAlbum;
     }
 }

@@ -2,8 +2,11 @@
 <html lang="en" data-bs-theme="dark">
 <head prefix="og: https://ogp.me/ns#">
     <%- include('../snippets/head.ejs'); %>
+    <title>Files - WaifuVault</title>
     <link href="/assets/custom/css/index.css" rel="stylesheet">
-    <link href="https://cdn.datatables.net/v/bs5/jq-3.7.0/dt-2.1.4/b-3.1.1/b-colvis-3.1.1/fh-4.0.1/r-3.0.2/sc-2.4.3/sl-2.0.5/sr-1.4.1/datatables.min.css" rel="stylesheet">
+    <link href="https://cdn.datatables.net/v/bs5/jq-3.7.0/dt-2.1.4/b-3.1.1/b-colvis-3.1.1/fh-4.0.1/r-3.0.2/sc-2.4.3/sl-2.0.5/sr-1.4.1/datatables.min.css"
+          rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/dropzone@5/dist/min/dropzone.min.css" type="text/css" />
     <style>
         table.dataTable td.dt-type-numeric, table.dataTable th.dt-type-numeric {
             text-align: initial;
@@ -23,6 +26,40 @@
 
         :root {
             --dt-row-selected: var(--bs-tertiary-bg-rgb);
+        }
+
+        .centerIcon {
+            width: 100%;
+            height: 100%;
+        }
+
+        .centerIcon:before {
+            width: 100%;
+            height: 100%;
+            font-size: 5.0em;
+            text-align: center;
+            display: block;
+            line-height: 100px;
+        }
+
+        .dz-image {
+            border-radius: 0 !important;
+        }
+
+        .btnCopy {
+            font-size: 14px;
+            text-align: center;
+            display: block;
+            cursor: pointer !important;
+            border: none;
+        }
+
+        .dropzone .dz-preview.dz-image-preview {
+            background: #fff0;
+        }
+
+        .dropzone.dz-drag-hover i {
+            opacity: .5;
         }
     </style>
 </head>
@@ -45,10 +82,14 @@
                         <% } %>
                     </div>
                     <% if(loginType === "bucket" && bucket.type === "PREMIUM") { %>
-                        <div class="alert alert-info mt-3"><i class="bi bi-question-circle"></i> This is a <%-bucket.type-%> bucket, this means that you get unlimited expiry.</div>
+                        <div class="alert alert-info mt-3">
+                            <i class="bi bi-question-circle"></i> This is a <%- bucket.type; -%> bucket, this means that
+                            you get unlimited expiry.
+                        </div>
                     <% } %>
                 </div>
                 <div class="card-body">
+                    <input type="checkbox" id="selectAll" value="all"> Select All
                     <table class="table submissionsTable datatables display nowrap" data-type="entries">
                         <thead>
                         <tr>
@@ -63,38 +104,51 @@
                             <th scope="col">file Name on system</th>
                             <th scope="col">url</th>
                             <th scope="col">Bucket</th>
+                            <th scope="col">file Token</th>
+                            <th scope="col">Album</th>
                         </tr>
                         </thead>
                     </table>
                 </div>
                 <% if(loginType === "bucket") { %>
-                    <div class="card-footer">
-                        <div class="float-end">
-                            <button class="btn btn-danger" id="deleteBucket">Delete bucket</button>
-                        </div>
+                    <div class="card-footer d-flex justify-content-between">
+                        <button class="btn btn-secondary" id="createAlbum">Create album</button>
+                        <button class="btn btn-danger" id="deleteBucket">Delete bucket</button>
                     </div>
                 <% } %>
             </div>
         </div>
     </div>
-    <div class="row mt-4"
-    <% if(loginType === "user") { %>>
-        <div class="col-md-12">
-            <div class="card border-primary mb-3">
-                <div class="card-header">Blocked Ips</div>
-                <div class="card-body">
-                    <table class="table blockedIpsTable datatables display nowrap" data-type="ips">
-                        <thead>
-                        <tr>
-                            <th scope="col">ID</th>
-                            <th scope="col">ip</th>
-                            <th scope="col">Blocked On</th>
-                        </tr>
-                        </thead>
-                    </table>
+    <div class="row mt-4">
+        <% if(loginType === "user") { %>
+            <div class="col-md-12">
+                <div class="card border-primary mb-3">
+                    <div class="card-header">Blocked Ips</div>
+                    <div class="card-body">
+                        <table class="table blockedIpsTable datatables display nowrap" data-type="ips">
+                            <thead>
+                            <tr>
+                                <th scope="col">ID</th>
+                                <th scope="col">ip</th>
+                                <th scope="col">Blocked On</th>
+                            </tr>
+                            </thead>
+                        </table>
+                    </div>
                 </div>
             </div>
-        </div>
+        <% } %>
+        <% if(loginType === "bucket") { %>
+            <div class="col-md-12">
+                <div class="card border-primary mb-3">
+                    <div class="card-body">
+                        <ul class="nav nav-tabs" id="albumTabs" role="tablist">
+                        </ul>
+                        <div class="tab-content" id="albumTabContent">
+                        </div>
+                    </div>
+                </div>
+            </div>
         <% } %>
     </div>
 </div>
@@ -129,7 +183,7 @@
     </div>
     <div class="modal fade" id="fileUploadModel" tabindex="-1" aria-labelledby="fileUploadModelLabel"
          aria-hidden="true">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div class="modal-header">
                     <h1 class="modal-title fs-5" id="fileDetailsModelLabel">File Upload</h1>
@@ -137,29 +191,57 @@
                 </div>
                 <div class="modal-body" id="fileDetailsModelInfoContent">
                     <div class="container-fluid">
-                        <div class="row">
+                        <div class="row py-2" id="dropzoneRow">
                             <div class="col-md-12 mb-3">
-                                <div>
-                                    <label for="radioFileSelectFile" class="form-label">File</label>
-                                    <div class="input-group">
-                                        <div class="input-group-text">
-                                            <input class="form-check-input mt-0" name="radioFileSelect" id="radioFileSelectFile" type="radio" aria-label="Radio button for selecting file" checked>
-                                        </div>
-                                        <input class="form-control" type="file" id="uploadFile" aria-label="Choose file">
-                                    </div>
+                                <div class="alert alert-info" role="alert">
+                                    You can upload files to your bucket by dragging and dropping them here, or by
+                                    browsing for files to upload.
+                                    <hr />
+                                    if you select an album to upload to, it will be processed <strong>AFTER</strong> all files are uploaded. <br/> <br/>
+                                    So please do not dismiss this model until all files are uploaded.
                                 </div>
-                                <div class="mt-3">
-                                    <label for="radioFileSelectUrl" class="form-label">URL</label>
-                                    <div class="input-group">
-                                        <div class="input-group-text">
-                                            <input class="form-check-input mt-0" id="radioFileSelectUrl" name="radioFileSelect" type="radio" aria-label="Radio button for following selecting URL">
-                                        </div>
-                                        <input type="text" id="url" class="form-control" aria-label="URL text input" placeholder="https://somedomain.com/your-file.jpg" disabled="disabled">
+                                <div id="uploadDropzone"
+                                     class="dropzone rounded mb-4 bg-dark border border-success text-white">
+                                    <i class="bi bi-cloud-arrow-up centerIcon"></i>
+                                    <div class="fallback">
+                                        <input name="file" type="file" />
                                     </div>
                                 </div>
                             </div>
                         </div>
                         <div class="row py-2">
+                            <div class="col-md-12">
+                                <hr />
+                            </div>
+                        </div>
+                        <div class="row py-2" id="urlRow">
+                            <div class="col-md-12">
+                                <div class="input-group">
+                                    <span class="input-group-text" id="urlLabel">Or upload via url</span>
+                                    <input type="text" class="form-control" id="url" aria-label="urlLabel">
+                                    <button class="btn btn-primary btn-file-upload" type="button" id="button-addon2">
+                                        Upload
+                                    </button>
+                                </div>
+                                <div class="hidden" id="error">
+                                    <div class="alert alert-danger" id="errorContent"></div>
+                                </div>
+                                <div class="hidden" id="success">
+                                    <div class="alert alert-success" style="overflow: hidden;text-overflow: ellipsis;">
+                                        File from URL Successfully Uploaded <br /> <span id="fileUploadedUrl"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row py-2">
+                            <div class="col-md-12">
+                                <hr />
+                            </div>
+                        </div>
+                        <div class="row py-2">
+                            <div class="alert alert-info">
+                                Any options set here will apply for both upload file and the drag zone
+                            </div>
                             <div class="col-md-3">
                                 <label for="expires" class="form-label">Expires</label>
                                 <input type="text" class="form-control" id="expires" placeholder="Eg 3d, 5h or 10m">
@@ -167,6 +249,18 @@
                             <div class="col-md-6">
                                 <label for="password" class="form-label">Password</label>
                                 <input type="password" class="form-control" id="password" placeholder="Optional">
+                            </div>
+                            <div class="col-md-3">
+                                <label for="expires" class="form-label">Album</label>
+                                <div class="dropdown">
+                                    <button class="btn btn-secondary dropdown-toggle" type="button"
+                                            data-bs-toggle="dropdown" aria-expanded="false" id="uploadToAlbumButton">
+                                        Select album
+                                    </button>
+                                    <ul class="dropdown-menu" id="uploadToAlbumSelect">
+                                        <li><a class="dropdown-item" href="#">None</a></li>
+                                    </ul>
+                                </div>
                             </div>
                         </div>
                         <div class="row py-2">
@@ -187,27 +281,9 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="row py-2">
-                            <div class="col-md-12 hidden" id="error">
-                                <div class="alert alert-danger" id="errorContent"></div>
-                            </div>
-                            <div class="col-md-12 hidden" id="success">
-                                <div class="alert alert-success" style="overflow: hidden;text-overflow: ellipsis;">
-                                    File Successfully Uploaded <br /> <span id="fileUploadedUrl"></span>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="row py-2">
-                            <div class="col-md-12">
-                                <div class="progress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" id="progressWrapper">
-                                    <div id="uploadProgress" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0"></div>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-primary btn-file-upload">Upload File</button>
                     <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
@@ -217,376 +293,751 @@
 
 
 <script src="https://cdn.datatables.net/v/bs5/jq-3.7.0/dt-2.1.4/b-3.1.1/b-colvis-3.1.1/fh-4.0.1/r-3.0.2/sc-2.4.3/sl-2.0.5/sr-1.4.1/datatables.min.js"></script>
+<script src="https://unpkg.com/dropzone@5/dist/min/dropzone.min.js"></script>
 <%- include('../snippets/scripts.ejs'); %>
 <script>
+    const bucketId = <%- loginType === "bucket" ? `"${bucket.bucketToken}";` : "null;"; -%>
+</script>
+<script>
+    Dropzone.autoDiscover = false;
     Site.loadPage(async site => {
+        let bucketAlbums = null;
+        let dz = null;
+
+        async function getBucketData() {
+            if (!bucketId) {
+                return null;
+            }
+            let resp;
+            try {
+                site.loading(true);
+                resp = await fetch(`${baseUrlSecureRest}/`, {
+                    method: "GET",
+                    headers: { "Content-Type": "application/json" }
+                });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    const errModal = createErrorModal('getBucketDataErrModal', `error ${err.status} - ${err.message}`);
+                    errModal.show();
+                    return;
+                }
+            } finally {
+                site.loading(false);
+            }
+
+            const json = await resp.json();
+
+            bucketAlbums = json.albums;
+            return json;
+        }
+
         const dtMap = new Map();
+
+        const bucketEntries = await getBucketData();
 
         document.getElementById("filesNav").classList.add("active");
 
-        const bucketId = <%- loginType === "bucket" ? `"${bucket.bucketToken}";` : "null;"; -%>
+        const uploadModalEl = document.getElementById("fileUploadModel");
+        const uploadModal = new bootstrap.Modal(uploadModalEl, { keyboard: false });
+        const detailsModal = new bootstrap.Modal(document.getElementById("fileDetailsModel"), { keyboard: false });
 
+        uploadModalEl.addEventListener("hidden.bs.modal", () => {
+            if (dz) {
+                dz.removeAllFiles();
+            }
+        });
 
-            function loadDt() {
-                const detailsModal = new bootstrap.Modal(document.getElementById("fileDetailsModel"), { keyboard: false });
-
-                const uploadModal = new bootstrap.Modal(document.getElementById("fileUploadModel"), { keyboard: false });
-                const progressWrapper = document.getElementById("progressWrapper");
-                const progressbar = document.getElementById("uploadProgress");
-
-                document.querySelector('.btn-file-upload').addEventListener('click', () => {
-                    const file = document.getElementById('uploadFile').files[0];
-                    const url = document.getElementById('url').value;
-                    const expires = document.getElementById('expires').value;
-                    const password = document.getElementById('password').value;
-                    const hideFileName = document.getElementById('hideFilename').checked;
-                    const oneTimeDownload = document.getElementById('oneTimeDownload').checked;
-
-                    uploadFile(file, url, bucketId, expires, password, hideFileName, oneTimeDownload);
-                });
-
-                document.getElementById('radioFileSelectFile').addEventListener('change', function() {
-                    const radioFile = document.getElementById('radioFileSelectFile');
-                    const urlInput = document.getElementById('url');
-                    const fileInput = document.getElementById('uploadFile');
-                    if (radioFile.checked) {
-                        urlInput.value = null;
-                        urlInput.disabled = true;
-                        fileInput.disabled = false;
-                    }
-                });
-
-                document.getElementById('radioFileSelectUrl').addEventListener('change', function() {
-                    const radioUrl = document.getElementById('radioFileSelectUrl');
-                    const urlInput = document.getElementById('url');
-                    const fileInput = document.getElementById('uploadFile');
-                    if (radioUrl.checked) {
-                        fileInput.value = null;
-                        fileInput.disabled = true;
-                        urlInput.disabled = false;
-                    }
-                });
-
-                function resetProgress() {
-                    progressbar.style.width = "0%";
-                    progressbar.innerText = "";
-                    progressWrapper.setAttribute("aria-valuenow", "0");
+        async function deleteAlbum(token, alsoFiles) {
+            const resp = await fetch(`${baseUrl}/album/${token}?deleteFiles=${alsoFiles.toString()}`, {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" }
+            });
+            if (!resp.ok) {
+                const err = await resp.json();
+                const errModal = createErrorModal('deleteAlbumErrModal',`error ${err.status} - ${err.message}`);
+                errModal.show();
+                return;
+            }
+            const delObj = await resp.json();
+            const addButtons = document.querySelectorAll(".sendToAlbum");
+            for (const b of addButtons) {
+                if (b.dataset.token === token) {
+                    b.remove();
                 }
+            }
+            return delObj.success;
+        }
 
-                async function uploadFile(file, url, bucket, expires, password, hideFilename, oneTimeDownload) {
-                    const restrictions = await getRestrictions();
-                    const max_upload_size = restrictions ? restrictions.filter(x => x.type === "MAX_FILE_SIZE")[0].value : null;
-                    const banned_mime_type = restrictions ? restrictions.filter(x => x.type === "BANNED_MIME_TYPE")[0].value : null;
-                    const uploadButton = document.querySelector('.btn-file-upload');
+        async function shareAlbum(token) {
+            const resp = await fetch(`${baseUrl}/album/share/${token}`, {
+                method: "GET",
+                headers: { "Content-Type": "application/json" }
+            });
+            if (!resp.ok) {
+                const err = await resp.json();
+                const errModal = createErrorModal('shareAlbumErrModal', `error ${err.status} - ${err.message}`);
+                errModal.show();
+                return;
+            }
+            const shareObj = await resp.json();
+            return shareObj.description;
+        }
+
+        async function unshareAlbum(token) {
+            const resp = await fetch(`${baseUrl}/album/revoke/${token}`, {
+                method: "GET",
+                headers: { "Content-Type": "application/json" }
+            });
+            if (!resp.ok) {
+                const err = await resp.json();
+                const errModal = createErrorModal('unshareAlbumErrModal', `error ${err.status} - ${err.message}`);
+                errModal.show();
+                return;
+            }
+            const shareObj = await resp.json();
+            return shareObj.success;
+        }
+
+        async function addFilesToAlbum(token, files) {
+            const resp = await fetch(`${baseUrl}/album/${token}/associate`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ fileTokens: files })
+            });
+            if (!resp.ok) {
+                const err = await resp.json();
+                const errModal = createErrorModal('addAlbumFilesErrModal', `error ${err.status} - ${err.message}`);
+                errModal.show();
+                return;
+            }
+            return await resp.json();
+        }
+
+        async function removeFilesFromAlbum(token, files) {
+            const resp = await fetch(`${baseUrl}/album/${token}/disassociate`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ fileTokens: files })
+            });
+            if (!resp.ok) {
+                const err = await resp.json();
+                const errModal = createErrorModal('removeAlbumFilesErrModal', `error ${err.status} - ${err.message}</span>`);
+                errModal.show();
+                return;
+            }
+            return await resp.json();
+        }
+
+        function resize(entryId) {
+            const tables = dtMap.get(entryId);
+            for (const table of tables) {
+                table.columns.adjust().draw();
+            }
+        }
+
+        async function buildAddTo() {
+            document.querySelectorAll("#addToAlbumPlaceholder > ul")?.forEach(b => b.remove());
+
+            function buildUploadToAlbumDropdown() {
+                const uploadToAlbumSelect = document.getElementById("uploadToAlbumSelect");
+                uploadToAlbumSelect.innerHTML = "";
+                const item = document.createElement("li");
+                item.addEventListener("click", () => {
+                    const b = document.getElementById("uploadToAlbumButton");
+                    b.innerHTML = "None";
+                    delete b.dataset.token;
+                });
+                item.innerHTML = `<a class="dropdown-item" href="#">None</a>`;
+                uploadToAlbumSelect.appendChild(item);
+                for (const a of bucketAlbums) {
+                    const item = document.createElement("li");
+                    item.innerHTML = `<a class="dropdown-item" href="#" data-token="${a.token}">${a.name}</a>`;
+                    item.addEventListener("click", (e) => {
+                        const b = document.getElementById("uploadToAlbumButton");
+                        b.dataset.token = a.token;
+                        b.innerHTML = a.name;
+                    });
+                    uploadToAlbumSelect.appendChild(item);
+                }
+            }
+
+            await getBucketData()
+            const addBtn = document.getElementById("addToAlbumPlaceholder");
+            addBtn.classList.add("dropdown-toggle");
+            addBtn.setAttribute("data-bs-toggle", "dropdown");
+            addBtn.setAttribute("aria-expanded", "false");
+            const menu = document.createElement("ul");
+            menu.setAttribute("class", "dropdown-menu");
+            menu.setAttribute("aria-labelledby", "addToAlbumBtn");
+            menu.setAttribute("id", "albumMenu");
+            for (const a of bucketAlbums) {
+                const item = document.createElement("li");
+                item.innerHTML = `<button class="dropdown-item sendToAlbum" type="button" data-token="${a.token}">${a.name}</button>`;
+                menu.appendChild(item);
+            }
+            addBtn.appendChild(menu);
+            buildUploadToAlbumDropdown();
+        }
+
+        async function buildAlbumTabs() {
+            const albums = (await getBucketData()).albums;
+            const token = albums.length > 0 ? albums[0].token : null;
+            const albumTabs = document.getElementById("albumTabs");
+            const albumContents = document.getElementById("albumTabContent");
+            albumTabs.innerHTML = "";
+            albumContents.innerHTML = "";
+            if (albums.length === 0) {
+                albumTabs.innerHTML = "<li><h3>No Albums Have Been Defined</h3></li>";
+                return;
+            }
+            for (const a of albums) {
+                const item = document.createElement("li");
+                item.setAttribute("id", `${a.token}`);
+                const itemClass = a.token === token ? "nav-link active" : "nav-link";
+                const itemSelected = a.token === token ? "true" : "false";
+                item.innerHTML = `<button id="${a.token}-tab" class="${itemClass}" type="button" data-bs-toggle="tab" data-bs-target="#${a.token}-tab-pane" role="tab" aria-controls="${a.token}-tab-pane" aria-selected="${itemSelected}">${a.name}</button>`;
+                albumTabs.appendChild(item);
+                const pane = document.createElement("div");
+                const paneClass = a.token === token ? "tab-pane fade show active" : "tab-pane fade";
+                pane.setAttribute("class", paneClass);
+                pane.setAttribute("id", a.token + "-tab-pane");
+                pane.setAttribute("role", "tabpanel");
+                pane.setAttribute("aria-labelledby", a.token + "-tab");
+                pane.setAttribute("tabindex", "0");
+                const contents = buildAlbumCard(a.token, a.publicToken);
+                pane.appendChild(contents);
+                albumContents.appendChild(pane);
+            }
+            linkAlbumTabButtons();
+        }
+
+        function buildAlbumCard(token, pubToken) {
+            const card = document.createElement("div");
+            card.setAttribute("class", "card border-primary mb-3");
+            const shareButton = `<button class="btn btn-secondary ${pubToken ? "unshareAlbum" : "shareAlbum"}" data-token="${token}">${pubToken ? "Unshare Album" : "Share Album"}</button>`;
+            const albumUrl = pubToken ? `<button class="btn btn-success pubUrlButton" data-token="${pubToken}">${mainRul}/album/${pubToken}</button>` : "";
+            const fileEntries = `<table class="table albumFilesTable datatables display nowrap" data-type="albumEntries" data-album="${token}">
+                                 <thead><tr>
+                                    <th scope="col">ID</th>
+                                    <th scope="col">file Name</th>
+                                    <th scope="col">file Extension</th>
+                                    <th scope="col">file Size</th>
+                                    <th scope="col">expires</th>
+                                    <th scope="col">Views</th>
+                                 </tr></thead>
+                                 </table>`;
+            card.innerHTML = `<div class="card-header"><div>Current Entries for Album: ${token}</div></div>
+                              <div class="card-body">${fileEntries}</div>
+                              <div id="footer-${token}" class="card-footer d-flex justify-content-between">${shareButton}${albumUrl}<button class="btn btn-danger deleteAlbum" data-token="${token}">Delete Album</button>`;
+            return card;
+        }
+
+        function updateCardFooter(albumToken) {
+            const pubToken = bucketAlbums.filter(x => x.token === albumToken)[0].publicToken;
+            const shareButton = `<button class="btn btn-secondary ${pubToken ? "unshareAlbum" : "shareAlbum"}" data-token="${albumToken}">${pubToken ? "Unshare Album" : "Share Album"}</button>`;
+            const albumUrl = pubToken ? `<button class="btn btn-success pubUrlButton" data-token="${pubToken}">${mainRul}/album/${pubToken}</button>` : "";
+            const footer = document.getElementById(`footer-${albumToken}`);
+            footer.innerHTML = `${shareButton}${albumUrl}<button class="btn btn-danger deleteAlbum" data-token="${albumToken}">Delete Album</button>`;
+            linkAlbumTabButtons(albumToken);
+        }
+
+        function linkAlbumButtons() {
+            const albumButtons = document.querySelectorAll(".sendToAlbum");
+
+            async function handleSendToClick(event) {
+                const b = event.currentTarget; // Reference to the button
+                const albumToken = b.dataset.token;
+                const dt = dtMap.get("entries")[0];
+                const idArr = [];
+                dt.rows({ selected: true }).every(function() {
+                    const data = this.data();
+                    idArr.push(data.fileToken);
+                });
+                await addFilesToAlbum(albumToken, idArr);
+                dt.ajax.reload();
+                await refreshAlbumFiles();
+            }
+
+            albumButtons.forEach(b => {
+                b.removeEventListener("click", handleSendToClick);
+                b.addEventListener("click", handleSendToClick);
+            });
+        }
+
+        function linkAlbumTabButtons(album) {
+            const tabEls = document.querySelectorAll("button[data-bs-toggle=\"tab\"]");
+            for (let i = 0; i < tabEls.length; i++) {
+                const tab = tabEls[i];
+                tab.addEventListener("shown.bs.tab", () => {
+                    resize("albumEntries");
+                });
+            }
+
+            const deleteTarget = album ? `#footer-${album} .deleteAlbum` : ".deleteAlbum";
+            const deleteButtons = document.querySelectorAll(deleteTarget);
+            deleteButtons.forEach(db => {
+                db.addEventListener("click", async () => {
+                    async function afterDelete() {
+                        await buildAlbumTabs();
+                        loadDt("albumEntries");
+                        dtMap.get("entries").forEach(t => {
+                            t.ajax.reload();
+                        });
+                    }
+
+                    async function yes() {
+                        await deleteAlbum(albumToken, true);
+                        document.getElementById(albumToken).remove();
+                        await afterDelete();
+                    }
+
+                    async function no() {
+                        await deleteAlbum(albumToken, false);
+                        document.getElementById(albumToken).remove();
+                        await afterDelete();
+                    }
+
+                    const albumToken = db.dataset.token;
+                    const modalElt = createBasicModal("deleteAlbumModal", "Delete Files from Album", "Do you wish to also delete the files (choosing No will return them to the bucket) ?", "Yes", yes, "btn-danger", "No", no, "btn-secondary");
+                    modalElt.show();
+                });
+            });
+
+            const shareTarget = album ? `#footer-${album} .shareAlbum` : ".shareAlbum";
+            const shareButtons = document.querySelectorAll(shareTarget);
+            shareButtons.forEach(sb => {
+                sb.addEventListener("click", async () => {
+                    const albumToken = sb.dataset.token;
+                    await shareAlbum(albumToken);
+                    bucketAlbums = (await getBucketData()).albums;
+                    updateCardFooter(albumToken);
+                });
+            });
+
+            const unshareTarget = album ? `#footer-${album} .unshareAlbum` : ".unshareAlbum";
+            const unshareButtons = document.querySelectorAll(unshareTarget);
+            unshareButtons.forEach(ub => {
+                ub.addEventListener("click", async () => {
+                    const albumToken = ub.dataset.token;
+                    await unshareAlbum(albumToken);
+                    bucketAlbums = (await getBucketData()).albums;
+                    updateCardFooter(albumToken);
+                });
+            });
+
+            const urlButtonTarget = album ? `#footer-${album} .pubUrlButton` : ".pubUrlButton";
+            const urlButtons = document.querySelectorAll(urlButtonTarget);
+            urlButtons.forEach(ub => {
+                ub.addEventListener("click", async () => {
+                    const albumToken = ub.dataset.token;
+                    navigator.clipboard.writeText(`${mainRul}/album/${albumToken}`).then(() => {
+                        const originalText = ub.innerText;
+                        ub.innerText = "Copied to Clipboard";
+                        setTimeout(() => {
+                            ub.innerText = originalText;
+                        }, 2000);
+                    }).catch(err => {
+                        console.error("Failed to copy URL: ", err);
+                    });
+                });
+            });
+        }
+
+        async function refreshAlbumFiles() {
+            const bucketEntries = await getBucketData();
+            bucketAlbums = bucketEntries.albums;
+            const bucketFiles = bucketEntries.files;
+            const albumList = bucketAlbums.map(e => e.token).reverse();
+            const albumDT = dtMap.get("albumEntries");
+            for (const tab of albumDT) {
+                const curToken = albumList.pop();
+                tab.clear();
+                tab.rows.add(bucketFiles.filter(e => e.albumToken === curToken));
+                tab.draw(false);
+            }
+        }
+
+        function loadDt(dtToLoad = null) {
+            if (dtMap.has(dtToLoad)) {
+                dtMap.get(dtToLoad).forEach(d => d.destroy(true));
+                dtMap.delete(dtToLoad);
+            } else {
+                document.querySelector(".btn-file-upload")?.addEventListener("click", async () => {
+                    const url = document.getElementById("url").value;
+                    const expires = document.getElementById("expires").value;
+                    const password = document.getElementById("password").value;
+                    const hideFileName = document.getElementById("hideFilename").checked;
+                    const oneTimeDownload = document.getElementById("oneTimeDownload").checked;
+                    const uploadButton = document.querySelector(".btn-file-upload");
                     const fileUploadSuccess = document.getElementById("fileUploadedUrl");
+                    const album = document.getElementById("uploadToAlbumButton").dataset.token;
                     fileUploadSuccess.innerHTML = null;
 
-                    uploadButton.disabled = true;
-                    let params = `hide_filename=${hideFilename}&one_time_download=${oneTimeDownload}`;
+                    uploadButton.setAttribute("disabled", "true");
+                    uploadButton.classList.add("disabled");
+
+                    let params = `hide_filename=${hideFileName}&one_time_download=${oneTimeDownload}`;
                     if (expires) {
                         params += `&expires=${expires}`;
                     }
 
-                    if (file && max_upload_size && file.size > max_upload_size) {
-                        Site.showError(`File is too large (server limit is ${sizeAsMB()(max_upload_size,"display","")})`);
-                        uploadButton.disabled = false;
-                        return;
-                    }
-
-                    if (file && file.type!=="" && banned_mime_type && banned_mime_type.indexOf(file.type) !== -1) {
-                        Site.showError(`File is a banned type (server bans ${banned_mime_type})`);
-                        uploadButton.disabled = false;
-                        return;
+                    let fileUploadUrl = `${baseUrl}`;
+                    if (bucketId) {
+                        fileUploadUrl += `/${bucketId}?${params}`;
+                    } else {
+                        fileUploadUrl += `?${params}`;
                     }
 
                     const formData = new FormData();
-                    if (url) {
-                        formData.append('url', url)
-                    } else {
-                        formData.append('file', file);
-                    }
+                    formData.append("url", url);
 
                     if (password) {
-                        formData.append('password', password);
+                        formData.append("password", password);
                     }
-
-                    const xhr = new XMLHttpRequest();
-                    let fileUploadUrl = `${baseUrl}`;
-                    if(bucket){
-                        fileUploadUrl += `/${bucket}?${params}`;
-                    }else{
-                        fileUploadUrl += `?${params}`;
-                    }
-                    xhr.open('PUT', fileUploadUrl, true);
-
-                    xhr.upload.onprogress = function(event) {
-                        if (event.lengthComputable) {
-                            const uploadDone = Math.round((event.loaded / event.total) * 100) + "%";
-                            progressbar.innerText = uploadDone;
-                            progressbar.style.width = uploadDone;
-                            progressWrapper.setAttribute("aria-valuenow", Math.round((event.loaded / event.total) * 100).toString());
-                        }
-                    };
-
-                    xhr.onload = function() {
-                        const response =  JSON.parse(xhr.response);
-                        if (xhr.status === 200 || xhr.status === 201) {
-                            const url = encodeURI(response.url);
-                            const btn = document.createElement("button");
-                            btn.className = "btn btn-sm btn-outline-primary mt-3 d-block";
-                            btn.addEventListener("click", () => navigator.clipboard.writeText(url));
-                            btn.textContent = "Copy to clipboard";
-
-                            const anchor = document.createElement("a");
-                            anchor.setAttribute("target", "_blank");
-                            anchor.setAttribute("href", url);
-                            anchor.textContent = url;
-                            fileUploadSuccess.append(anchor);
-                            anchor.after(btn);
-                            // fileUploadSuccess.innerHTML = `<a target="_blank" href="${response.url}">${response.url}</a> <button class="btn btn-sm btn-outline-primary" role="button" onclick="navigator.clipboard.writeText(response);">Copy to clipboard</button>`;
-                            Site.showSuccess();
-                        } else {
-                            Site.showError('Error uploading file: ' + response.message);
-                        }
-                        resetProgress();
-                        reloadTable(["entries"]);
-                        uploadButton.disabled = false;
-                    };
-
-                    xhr.onerror = function() {
-                        Site.showError('Network error.');
-                        resetProgress();
-                        uploadButton.disabled = false;
-                    };
-
-                    xhr.send(formData);
-                }
-
-                function sizeAsMB() {
-                    return function(data, type, row) {
-                        if (type === "display") {
-                            const sizeKB = Math.floor(data / 1024);
-                            const sizeMB = Math.floor(sizeKB / 1024);
-                            if (data < 1024) {
-                                return `${data} B`;
-                            }
-                            if (sizeKB < 1024) {
-                                return `${sizeKB} KB`;
-                            }
-                            return `${sizeMB} MB`;
-                        }
-                        return data;
-                    };
-                }
-
-                function addDetailInfo(detailArr) {
-                    const copyButtons = ["IP", "URL", "Original Name"];
-                    document.getElementById("detailsTableBody").innerHTML = detailArr.map(details => {
-                        const header = details[0];
-                        let data = details[1];
-                        if (header === "URL") {
-                            data = `<a href='${data}' target='_blank'><span>${data}</span></a>`;
-                        } else {
-                            data = `<span>${data}</span>`;
-                        }
-                        if (copyButtons.includes(header)) {
-                            data += `<i title="Copy value to clipboard" class='bi bi-clipboard ms-1' onclick='navigator.clipboard.writeText("${encodeURI(details[1])}");'></i>`;
-                        }
-                        return `<tr><th>${header}</th><td>${data}</td></tr>`;
-                    }).join("");
-                }
-
-                function renderNullField() {
-                    return function(data, type, row) {
-                        return data ?? "N/A";
-                    };
-                }
-
-                function colouredIP() {
-                    return function(data, type, row) {
-                        if (type === "display") {
-                            let sizedData = data;
-                            if (data.length > 15) {
-                                const splitData = data.split(":");
-                                sizedData = `${splitData[0]}: ... :${splitData[splitData.length - 1]}`;
-                            }
-                            if (row.ipBanned) {
-                                return `<span class="text-danger">${sizedData}</span>`;
-                            }
-                            return sizedData;
-                        }
-                        return data;
-                    };
-                }
-
-                function customDate() {
-                    return function(data, type, row) {
-                        if (type === "display") {
-                            return new Date(Date.parse(data)).toLocaleString();
-                        }
-                        return data;
-                    };
-                }
-
-                function fileEmbedRender() {
-                    return function(data, type, row) {
-                        const url = row.url;
-                        const notProtected = row.fileProtectionLevel === "None" && !row.oneTimeDownload;
-                        const ext = url.match(/\.(mp4|ogg|webm)$/)?.[1];
-                        let filename = data || `${row.fileName}`; // filename here is originalFileName. but hidden files do not have it, so get the filename on disk
-                        if (ext && !data) {
-                            filename += `.${ext}`;
-                        }
-                        if (notProtected) {
-                            if (url.match(/\.(jpeg|jpg|gif|png|webp)$/) != null) {
-                                const imageTag = `<img width='auto' height='240' src='${url}' />`
-                                return `<span class="text-primary" data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="right" data-bs-title="${imageTag}">${filename}</span>`;
-                            } else if (url.match(/\.(mp4|ogg|webm)$/) != null) {
-                                let type = `video/${ext}`;
-                                const videoTag = `<video width='auto' height='240' autoplay><source src='${url}' type='${type}'></video>`;
-                                return `<span class="text-primary" data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="right" data-bs-title="${videoTag}">${filename}</span>`;
-                            } else if (url.match(/\.(pdf)$/) != null) {
-                                const pdfTag = `<embed class='pdf' width='auto' height='240' src='${url}'>`
-                                return `<span class="text-primary" data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="right" data-bs-title="${pdfTag}">${filename}</span>`;
-                            }
-                        }
-                        return `<span>${filename}</span>`;
-                    };
-                }
-
-
-                function getDataMapping(type) {
-                    switch (type) {
-                        case "ips":
-                            return [
-                                { data: "id" },
-                                { data: "ip" },
-                                { data: "createdAt", render: customDate() }
-                            ];
-                        case "entries":
-                            return [
-                                { data: "id" },
-                                { data: "originalFileName", className: "col-filename", render: fileEmbedRender() },
-                                { data: "fileExtension", className: "col-fileext" },
-                                { data: "fileSize", render: sizeAsMB() },
-                                { data: "createdAt", render: customDate() },
-                                { data: "expires", render: renderNullField() },
-                                { data: "mediaType", render: renderNullField() },
-                                { data: "views" },
-                                { data: "fileName" },
-                                { data: "url" },
-                                { data: "bucket", render: renderNullField() }
-                            ];
-                    }
-                }
-
-                async function unBanIps(ips) {
                     Site.loading(true);
-                    let response;
+                    let resp;
                     try {
-                        response = await fetch(`${baseUrlSecureRest}/unblockIps`, {
-                            method: "POST",
-                            headers: {
-                                "Accept": "application/json",
-                                "Content-Type": "application/json"
-                            },
-                            body: JSON.stringify(ips)
+                        resp = await fetch(fileUploadUrl, {
+                            method: "PUT",
+                            body: formData,
                         });
                     } catch (e) {
-                        alert(e.message);
-                        return false;
-                    } finally {
-                        Site.loading(false);
-                    }
-                    const responseStatus = response.status;
-                    const responseJson = await response.json();
-                    if (responseStatus !== 200) {
-                        alert(responseJson.message);
-                        throw new Error(responseJson.message);
-                    }
-                }
-
-                async function banIp(ip, removeRelatedData = false) {
-                    Site.loading(true);
-                    let response;
-                    try {
-                        response = await fetch(`${baseUrlSecureRest}/blockIp?removeRelatedData=${removeRelatedData}`, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                            body: new URLSearchParams({ ip })
-                        });
-                    } catch (e) {
-                        alert(e.message);
-                        return false;
-                    } finally {
-                        Site.loading(false);
-                    }
-                    const responseStatus = response.status;
-                    const responseJson = await response.json();
-                    if (responseStatus !== 200) {
-                        alert(responseJson.message);
-                        throw new Error(responseJson.message);
-                    }
-                }
-
-                async function deleteEntry(ids) {
-                    Site.loading(true);
-                    let response;
-                    try {
-                        response = await fetch(`${baseUrlSecureRest}/deleteEntries`, {
-                            method: "DELETE",
-                            headers: {
-                                "Accept": "application/json",
-                                "Content-Type": "application/json"
-                            },
-                            body: JSON.stringify(ids)
-                        });
-                    } catch (e) {
-                        alert(e.message);
-                        return false;
-                    } finally {
-                        Site.loading(false);
-                    }
-                    const responseStatus = response.status;
-                    const responseJson = await response.json();
-                    if (responseStatus !== 200) {
-                        alert(responseJson.message);
-                        throw new Error(responseJson.message);
-                    }
-                }
-
-                async function getRestrictions() {
-                    Site.loading(true);
-                    let response;
-                    try {
-                        response = await fetch(`${baseUrl}/resources/restrictions`);
-                    } catch(e) {
                         alert(e.message);
                         return null;
                     } finally {
                         Site.loading(false);
                     }
-                    const responseStatus = response.status;
-                    const responseJson = await response.json();
-                    if (responseStatus !== 200) {
-                        Site.showError(responseJson.message);
-                        throw new Error(responseJson.message);
-                    }
-                    return responseJson;
-                }
+                    const json = await resp.json();
 
-                function getButtons(type) {
-                    const buttons = [];
-                    if (type === "entries") {
-                        buttons.push({
-                                extend: "selected",
-                                text: "Delete file",
-                                attr: { id: "deleteFilesButton" },
-                                action: async (e, dt) => {
-                                    const accepted = confirm("Are you sure you want to delete these entries?, the files will also be deleted");
-                                    if (!accepted) {
-                                        return;
-                                    }
+                    if (resp.ok) {
+                        const url = encodeURI(json.url);
+                        const btn = document.createElement("button");
+                        btn.className = "btn btn-sm btn-outline-primary mt-3 d-block";
+                        btn.addEventListener("click", () => navigator.clipboard.writeText(url));
+                        btn.textContent = "Copy to clipboard";
+
+                        const anchor = document.createElement("a");
+                        anchor.setAttribute("target", "_blank");
+                        anchor.setAttribute("href", url);
+                        anchor.textContent = url;
+                        fileUploadSuccess.append(anchor);
+                        anchor.after(btn);
+
+                        if (album) {
+                            const dt = dtMap.get("entries")[0];
+                            await addFilesToAlbum(album, [json.token]);
+                            dt.ajax.reload();
+                            await refreshAlbumFiles();
+                        }
+
+                        Site.showSuccess();
+                    } else {
+                        if (json.message) {
+                            Site.showError(json.message);
+                        } else {
+                            Site.showSuccess("Network Error.");
+                        }
+                    }
+
+                    reloadTable(["entries"]);
+                    uploadButton.removeAttribute("disabled");
+                    uploadButton.classList.remove("disabled");
+                });
+            }
+
+
+            function initDropzone() {
+                let album = null;
+                dz = new Dropzone("#uploadDropzone", {
+                    url: "/rest",
+                    method: "PUT",
+                    uploadMultiple: false,
+                    addRemoveLinks: false,
+                    maxThumbnailFilesize: 50,
+                    maxFilesize: <%- process.env.FILE_SIZE_UPLOAD_LIMIT_MB; -%>,
+                });
+                dz.on("sending", (file, xhr, formData) => {
+                    album = document.getElementById("uploadToAlbumButton").dataset.token;
+                    const password = document.getElementById("password").value;
+                    if (password) {
+                        formData.append("password", password);
+                    }
+                });
+                dz.on("processing", function() {
+                    const expires = document.getElementById("expires").value;
+                    const hideFileName = document.getElementById("hideFilename").checked;
+                    const oneTimeDownload = document.getElementById("oneTimeDownload").checked;
+                    let params = `hide_filename=${hideFileName}&one_time_download=${oneTimeDownload}`;
+                    if (expires) {
+                        params += `&expires=${expires}`;
+                    }
+
+                    let fileUploadUrl = baseUrl;
+                    if (bucketId) {
+                        fileUploadUrl += `/${bucketId}?${params}`;
+                    } else {
+                        fileUploadUrl += `?${params}`;
+                    }
+
+                    this.options.url = fileUploadUrl;
+                });
+                dz.on("complete", file => {
+                    const dzPreview = file.previewElement;
+                    const response = JSON.parse(file.xhr.response);
+                    if (file.status === "success") {
+                        const btn = document.createElement("a");
+                        btn.classList.add("btn-primary", "btn-sm", "btn", "btnCopy", "rounded-0");
+                        btn.textContent = "Copy URL";
+                        btn.addEventListener("click", () => {
+                            navigator.clipboard.writeText(response.url);
+                            btn.textContent = "URL Copied!";
+                            setTimeout(() => {
+                                btn.textContent = "Copy URL";
+                            }, 1000);
+                        });
+                        btn.setAttribute("href", "javascript:undefined;")
+                        dzPreview.appendChild(btn);
+                    } else {
+                        file.previewElement.querySelector('.dz-error-message>span').textContent = response.message;
+                    }
+                });
+                dz.on("queuecomplete", async function() {
+                    if (album) {
+                        const files = this.files;
+                        const tokens = files.map(f => JSON.parse(f.xhr.responseText).token);
+                        const dt = dtMap.get("entries")[0];
+                        await addFilesToAlbum(album, tokens);
+                        dt.ajax.reload();
+                        await refreshAlbumFiles();
+                    }
+                    reloadTable(["entries"]);
+                });
+            }
+
+            function sizeAsMB() {
+                return function(data, type, row) {
+                    if (type === "display") {
+                        const sizeKB = Math.floor(data / 1024);
+                        const sizeMB = Math.floor(sizeKB / 1024);
+                        if (data < 1024) {
+                            return `${data} B`;
+                        }
+                        if (sizeKB < 1024) {
+                            return `${sizeKB} KB`;
+                        }
+                        return `${sizeMB} MB`;
+                    }
+                    return data;
+                };
+            }
+
+            function addDetailInfo(detailArr) {
+                const copyButtons = ["IP", "URL", "Original Name"];
+                document.getElementById("detailsTableBody").innerHTML = detailArr.map(details => {
+                    const header = details[0];
+                    let data = details[1];
+                    if (header === "URL") {
+                        data = `<a href='${data}' target='_blank'><span>${data}</span></a>`;
+                    } else {
+                        data = `<span>${data}</span>`;
+                    }
+                    if (copyButtons.includes(header)) {
+                        data += `<i title="Copy value to clipboard" class='bi bi-clipboard ms-1' onclick='navigator.clipboard.writeText("${encodeURI(details[1])}");'></i>`;
+                    }
+                    return `<tr><th>${header}</th><td>${data}</td></tr>`;
+                }).join("");
+            }
+
+            function renderNullField() {
+                return function(data, type, row) {
+                    return data ?? "N/A";
+                };
+            }
+
+            function renderAlbumField() {
+                return function(data, type, row) {
+                    return data?.name ?? "N/A";
+                };
+            }
+
+            function customDate() {
+                return function(data, type, row) {
+                    if (type === "display") {
+                        return new Date(Date.parse(data)).toLocaleString();
+                    }
+                    return data;
+                };
+            }
+
+            function shortenHash() {
+                return function(data, type, row) {
+                    if (type === 'display') {
+                        return ellipsis(data);
+                    }
+                    return data;
+                }
+            }
+
+            function ellipsis(str) {
+                if (str.length <= 8) {
+                    return str;
+                }
+                return `${str.slice(0, 4)}...${str.slice(-4)}`;
+            }
+
+            function fileEmbedRender() {
+                return function(data, type, row) {
+                    const url = row.url;
+                    const notProtected = row.fileProtectionLevel === "None" && !row.oneTimeDownload;
+                    const ext = url.match(/\.(mp4|ogg|webm)$/)?.[1];
+                    let filename = data || `${row.fileName}`; // filename here is originalFileName. but hidden files do not have it, so get the filename on disk
+                    if (ext && !data) {
+                        filename += `.${ext}`;
+                    }
+                    if (notProtected) {
+                        if (url.match(/\.(jpeg|jpg|gif|png|webp)$/) != null) {
+                            const imageTag = `<img width='auto' height='240' src='${url}' />`;
+                            return `<span class="text-primary" data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="right" data-bs-title="${imageTag}">${filename}</span>`;
+                        } else if (url.match(/\.(mp4|ogg|webm)$/) != null) {
+                            let type = `video/${ext}`;
+                            const videoTag = `<video width='auto' height='240' autoplay><source src='${url}' type='${type}'></video>`;
+                            return `<span class="text-primary" data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="right" data-bs-title="${videoTag}">${filename}</span>`;
+                        } else if (url.match(/\.(pdf)$/) != null) {
+                            const pdfTag = `<embed class='pdf' width='auto' height='240' src='${url}'>`;
+                            return `<span class="text-primary" data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="right" data-bs-title="${pdfTag}">${filename}</span>`;
+                        }
+                    }
+                    return `<span>${filename}</span>`;
+                };
+            }
+
+
+            function getDataMapping(type) {
+                switch (type) {
+                    case "ips":
+                        return [
+                            { data: "id" },
+                            { data: "ip", render: shortenHash() },
+                            { data: "createdAt", render: customDate() }
+                        ];
+                    case "albumEntries":
+                        return [
+                            { data: "id" },
+                            { data: "originalFileName", className: "col-filename", render: fileEmbedRender() },
+                            { data: "fileExtension", className: "col-fileext" },
+                            { data: "fileSize", render: sizeAsMB() },
+                            { data: "expiresString", render: renderNullField() },
+                            { data: "views" }
+                        ];
+                    case "entries":
+                        return [
+                            { data: "id" },
+                            { data: "originalFileName", className: "col-filename", render: fileEmbedRender() },
+                            { data: "fileExtension", className: "col-fileext" },
+                            { data: "fileSize", render: sizeAsMB() },
+                            { data: "createdAt", render: customDate() },
+                            { data: "expires", render: renderNullField() },
+                            { data: "mediaType", render: renderNullField() },
+                            { data: "views" },
+                            { data: "fileName" },
+                            { data: "url" },
+                            { data: "bucket", render: renderNullField() },
+                            { data: "fileToken" },
+                            { data: "album", render: renderAlbumField() }
+                        ];
+                }
+            }
+
+            async function unBanIps(ips) {
+                Site.loading(true);
+                let response;
+                try {
+                    response = await fetch(`${baseUrlSecureRest}/unblockIps`, {
+                        method: "POST",
+                        headers: {
+                            "Accept": "application/json",
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify(ips)
+                    });
+                } catch (e) {
+                    const errModal = createErrorModal('unbanIpsErrModal', e.message);
+                    errModal.show();
+                    return false;
+                } finally {
+                    Site.loading(false);
+                }
+                const responseStatus = response.status;
+                const responseJson = await response.json();
+                if (responseStatus !== 200) {
+                    const errModal = createErrorModal('unbanIpsJsonErrModal', responseJson.message);
+                    errModal.show();
+                    throw new Error(responseJson.message);
+                }
+            }
+
+            async function banIp(ip, removeRelatedData = false) {
+                Site.loading(true);
+                let response;
+                try {
+                    response = await fetch(`${baseUrlSecureRest}/blockIp?removeRelatedData=${removeRelatedData}`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                        body: new URLSearchParams({ ip })
+                    });
+                } catch (e) {
+                    const errModal = createErrorModal('banIpsErrModal', e.message);
+                    errModal.show();
+                    return false;
+                } finally {
+                    Site.loading(false);
+                }
+                const responseStatus = response.status;
+                const responseJson = await response.json();
+                if (responseStatus !== 200) {
+                    const errModal = createErrorModal('unbanIpsErrModal', responseJson.message);
+                    errModal.show();
+                    throw new Error(responseJson.message);
+                }
+            }
+
+            async function deleteEntry(ids) {
+                Site.loading(true);
+                let response;
+                try {
+                    response = await fetch(`${baseUrlSecureRest}/deleteEntries`, {
+                        method: "DELETE",
+                        headers: {
+                            "Accept": "application/json",
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify(ids)
+                    });
+                } catch (e) {
+                    const errModal = createErrorModal('deleteEntryErrModal', e.message);
+                    errModal.show();
+                    return false;
+                } finally {
+                    Site.loading(false);
+                }
+                const responseStatus = response.status;
+                const responseJson = await response.json();
+                if (responseStatus !== 200) {
+                    const errModal = createErrorModal('deleteEntryErrModal', responseJson.message);
+                    errModal.show();
+                    throw new Error(responseJson.message);
+                }
+            }
+
+            function getButtons(type) {
+                const buttons = [];
+                if (type === "entries") {
+                    buttons.push({
+                            extend: "selected",
+                            text: "Delete file",
+                            attr: { id: "deleteFilesButton" },
+                            action: async (e, dt) => {
+                                async function yes() {
                                     const idArr = [];
                                     dt.rows({ selected: true }).every(function() {
                                         const data = this.data();
@@ -594,213 +1045,330 @@
                                     });
                                     await deleteEntry(idArr);
                                     reloadTable(["entries"]);
-                                }
-                            },
-                                <% if(loginType === "user") { %>
-                            {
-                                extend: "selectedSingle",
-                                text: "Ban IP",
-                                attr: { id: "banIpButton" },
-                                action: async (e, dt) => {
-                                    const accepted = confirm("Are you sure you want to ban this IP?");
-                                    if (!accepted) {
-                                        return;
-                                    }
-                                    const deleteRelatedData = confirm("Do you want to also delete all related data?\nPress 'Cancel' for no and 'Ok' for Yes");
-                                    const selectedRow = dt.row({ selected: true }).data();
-                                    const ip = selectedRow.ip;
-                                    await banIp(ip, deleteRelatedData);
-                                    reloadTable(["entries", "ips"]);
-                                }
-                            },
-                                <% } %>
-                            {
-                                extend: "selectedSingle",
-                                text: "Details",
-                                attr: { id: "detailsButton" },
-                                action: async (e, dt) => {
-                                    const selectedRow = dt.row({ selected: true }).data();
-                                    const detailArr = [
-                                        ["ID", selectedRow.id],
-                                        ["File Name", selectedRow.fileName],
-                                        ["File Ext", selectedRow.fileExtension],
-                                        ["Original Name", selectedRow.originalFileName],
-                                        ["Media Type", selectedRow.mediaType],
-                                        ["File Size", selectedRow.fileSize],
-                                        ["File Protection Level", selectedRow.fileProtectionLevel],
-                                        ["Created At", customDate()(selectedRow.createdAt, "display", selectedRow)],
-                                        ["Expires", selectedRow.expires ?? "N/A"],
-                                        ["IP", selectedRow.ip],
-                                        ["URL", selectedRow.url],
-                                        ["Bucket", selectedRow.bucket ?? "N/A"],
-                                    ];
-                                    addDetailInfo(detailArr);
-                                    detailsModal.show();
-                                }
-                            },
-                            {
-                                extend: "selectedSingle",
-                                text: "Download file",
-                                attr: { id: "downloadFileButton" },
-                                action: async (e, dt) => {
-                                    const selectedRow = dt.row({ selected: true }).data();
-                                    const url = selectedRow.url;
-                                    window.open(url, "_blank");
-                                    if (selectedRow.oneTimeDownload) {
-                                        setTimeout(function() {
-                                            reloadTable(["entries"]);
-                                        }, 1000);
+                                    if (bucketId) {
+                                        await refreshAlbumFiles();
                                     }
                                 }
-                            },
-                            {
-                                text: "Upload file",
-                                attr: { id: "uploadFileButton" },
-                                action: async (e, dt) => {
-                                    uploadModal?.show();
+
+                                async function no() {
+                                    return;
                                 }
-                            },
-                        );
-                    } else if (type === "ips") {
-                        buttons.push({
-                            extend: "selected",
-                            text: "Un-ban",
-                            attr: { id: "downloadFileButton" },
+
+                                const modalElt = createBasicModal("deleteFilesModal", "Delete Files", "Are you sure you want to delete these files ?", "Yes", yes, "btn-danger", "No", no, "btn-secondary");
+                                modalElt.show();
+                            }
+                        },
+                            <% if(loginType === "user") { %>
+                        {
+                            extend: "selectedSingle",
+                            text: "Ban IP",
+                            attr: { id: "banIpButton" },
                             action: async (e, dt) => {
-                                const accepted = confirm("Are you sure you want to remove the ban for the selected ip(s)?");
+                                const selectedRow = dt.row({ selected: true }).data();
+                                if (!selectedRow.ip) {
+                                    return;
+                                }
+                                const accepted = confirm("Are you sure you want to ban this IP?");
                                 if (!accepted) {
                                     return;
                                 }
-                                const ipArr = [];
-                                dt.rows({ selected: true }).every(function() {
-                                    const data = this.data();
-                                    ipArr.push(data.ip);
-                                });
-                                await unBanIps(ipArr);
-                                dt.rows({ selected: true }).remove().draw(false);
-                                reloadTable(["entries"]);
+                                const deleteRelatedData = confirm("Do you want to also delete all related data?\nPress 'Cancel' for no and 'Ok' for Yes");
+                                const ip = selectedRow.ip;
+                                await banIp(ip, deleteRelatedData);
+                                reloadTable(["entries", "ips"]);
                             }
-                        });
-                    }
-                    return buttons;
-                }
-
-                function reloadTable(types) {
-                    for (const type of types) {
-                        dtMap.get(type)?.ajax.reload();
-                    }
-                }
-
-                function initSelectListeners(type) {
-                    function disableButtonsOnSelection(value, buttons) {
-                        if (value) {
-                            buttons.disable();
-                        } else {
-                            buttons.enable();
+                        },
+                            <% } %>
+                        {
+                            extend: "selectedSingle",
+                            text: "Details",
+                            attr: { id: "detailsButton" },
+                            action: async (e, dt) => {
+                                const selectedRow = dt.row({ selected: true }).data();
+                                const detailArr = [
+                                    ["ID", selectedRow.id],
+                                    ["File Name", selectedRow.fileName],
+                                    ["File Ext", selectedRow.fileExtension],
+                                    ["Original Name", selectedRow.originalFileName],
+                                    ["Media Type", selectedRow.mediaType],
+                                    ["File Size", selectedRow.fileSize],
+                                    ["File Protection Level", selectedRow.fileProtectionLevel],
+                                    ["Created At", customDate()(selectedRow.createdAt, "display", selectedRow)],
+                                    ["Expires", selectedRow.expires ?? "N/A"],
+                                    ["IP", selectedRow.ip ?? "N/A"],
+                                    ["URL", selectedRow.url],
+                                    ["Bucket", selectedRow.bucket ?? "N/A"]
+                                ];
+                                addDetailInfo(detailArr);
+                                detailsModal.show();
+                            }
+                        },
+                        {
+                            extend: "selectedSingle",
+                            text: "Download file",
+                            attr: { id: "downloadFileButton" },
+                            action: async (e, dt) => {
+                                const selectedRow = dt.row({ selected: true }).data();
+                                const url = selectedRow.url;
+                                window.open(url, "_blank");
+                                if (selectedRow.oneTimeDownload) {
+                                    setTimeout(function() {
+                                        reloadTable(["entries"]);
+                                    }, 1000);
+                                }
+                            }
+                        },
+                        {
+                            text: "Upload file",
+                            attr: { id: "uploadFileButton" },
+                            action: async (e, dt) => {
+                                uploadModal?.show();
+                            }
+                        },
+                        {
+                            extend: "selected",
+                            text: "Add to Album",
+                            attr: { id: "addToAlbumPlaceholder" }
                         }
-                    }
+                    );
+                } else if (type === "ips") {
+                    buttons.push({
+                        extend: "selected",
+                        text: "Un-ban",
+                        attr: { id: "downloadFileButton" },
+                        action: async (e, dt) => {
+                            const accepted = confirm("Are you sure you want to remove the ban for the selected ip(s)?");
+                            if (!accepted) {
+                                return;
+                            }
+                            const ipArr = [];
+                            dt.rows({ selected: true }).every(function() {
+                                const data = this.data();
+                                ipArr.push(data.ip);
+                            });
+                            await unBanIps(ipArr);
+                            dt.rows({ selected: true }).remove().draw(false);
+                            reloadTable(["entries"]);
+                        }
+                    });
+                } else if (type === "albumEntries") {
+                    buttons.push({
+                        extend: "selected",
+                        text: "Remove file",
+                        attr: { id: "removeFilesButton" },
+                        action: async (e, dt) => {
+                            const idArr = [];
+                            const albumArr = [];
+                            dt.rows({ selected: true }).every(function() {
+                                const data = this.data();
+                                idArr.push(data.token);
+                                albumArr.push(data.albumToken);
+                            });
+                            await removeFilesFromAlbum(albumArr[0], idArr);
+                            dt.rows({ selected: true }).remove().draw(false);
+                            reloadTable(["entries"]);
+                        }
+                    });
+                }
+                return buttons;
+            }
 
-                    const table = dtMap.get(type);
-                    if (type === "entries") {
-                        table.on("select", function(e, dt, type, indexes) {
+            function reloadTable(types) {
+                for (const type of types) {
+                    const tables = dtMap.get(type);
+                    tables?.forEach(t => {
+                        t.ajax.reload();
+                    });
+                }
+            }
+
+            function initSelectListeners(type) {
+                function disableButtonsOnSelection(value, buttons) {
+                    if (value) {
+                        buttons.disable();
+                    } else {
+                        buttons.enable();
+                    }
+                }
+
+                const table = dtMap.get(type);
+                table.forEach(t => {
+                    if (type === "entries" || type === "albumEntries") {
+                        t.on("select", function(e, dt, type, indexes) {
                             if (type === "row") {
-                                const data = table
+                                const data = t
                                     .rows(indexes)
                                     .data()
                                     .pluck("ipBanned");
-                                disableButtonsOnSelection(data.get(0), table.buttons(["#banIpButton"]));
+                                disableButtonsOnSelection(data.get(0), t.buttons(["#banIpButton"]));
                             }
                         });
                     }
-                    table.on("draw.dt", () => {
+                    t.on("draw.dt", () => {
                         site.initTooltips();
                     });
-                }
-
-                $(".datatables").each(async function() {
-                    const el = $(this)[0];
-                    const type = el.dataset.type;
-                    let url = null;
-                    switch (type) {
-                        case "ips":
-                            url = `${baseUrlSecureRest}/blockedIps`;
-                            break;
-                        case "entries":
-                            url = `${baseUrlSecureRest}/datatablesEntries`;
-                    }
-                    const dtOpts = {
-                        layout: {
-                            top2Start: "buttons",
-                            topStart: {
-                                pageLength: {
-                                    menu: [10, 25, 50, 100]
-                                }
-                            },
-                            topEnd: {
-                                search: {
-                                    placeholder: "Type search here"
-                                }
-                            },
-                            bottomEnd: "paging"
-                        },
-                        stateSave: true,
-                        paging: true,
-                        fixedHeader: {
-                            header: true
-                        },
-                        responsive: true,
-                        autoWidth: false,
-                        scrollY: 600,
-                        scrollX: false,
-                        scrollCollapse: true,
-                        select: {
-                            style: "multi"
-                        },
-                        columns: getDataMapping(type),
-                        buttons: getButtons(type)
-                    };
-                    if (type === "entries") {
-                        dtOpts.ajax = url;
-                        dtOpts.processing = true;
-                        dtOpts.serverSide = true;
-                        dtOpts.language = {
-                            loadingRecords: "No data available"
-                        };
-                    } else if (type === "ips") {
-                        dtOpts.ajax = {
-                            url,
-                            dataSrc: ""
-                        };
-                    }
-                    site.loading(true);
-                    const table = new DataTable(el, dtOpts);
-                    site.loading(false);
-                    if (dtMap.has(type)) {
-                        dtMap.get(type).push(table);
-                    } else {
-                        dtMap.set(type, table);
-                    }
-                    initSelectListeners(type);
                 });
             }
 
-        loadDt();
+            async function loadDt(el) {
+                const type = el.dataset.type;
+                let url = null;
+                switch (type) {
+                    case "ips":
+                        url = `${baseUrlSecureRest}/blockedIps`;
+                        break;
+                    case "albumEntries":
+                    case "entries":
+                        url = `${baseUrlSecureRest}/datatablesEntries`;
+                }
+                const dtOpts = {
+                    layout: {
+                        top2Start: "buttons",
+                        topStart: {
+                            pageLength: {
+                                menu: [10, 25, 50, 100]
+                            }
+                        },
+                        topEnd: {
+                            search: {
+                                placeholder: "Type search here"
+                            }
+                        },
+                        bottomEnd: "paging"
+                    },
+                    stateSave: true,
+                    paging: true,
+                    fixedHeader: {
+                        header: true
+                    },
+                    responsive: true,
+                    autoWidth: false,
+                    scrollY: 600,
+                    scrollX: false,
+                    scrollCollapse: true,
+                    select: {
+                        style: "multi"
+                    },
+                    columns: getDataMapping(type),
+                    buttons: getButtons(type)
+                };
+                if (type === "entries") {
+                    dtOpts.ajax = url;
+                    dtOpts.processing = true;
+                    dtOpts.serverSide = true;
+                    dtOpts.language = {
+                        loadingRecords: "No data available"
+                    };
+                } else if (type === "albumEntries") {
+                    dtOpts.data = bucketEntries.files.filter(e => e.albumToken === el.dataset.album);
+                } else if (type === "ips") {
+                    dtOpts.ajax = {
+                        url,
+                        dataSrc: ""
+                    };
+                }
+                site.loading(true);
+                const table = new DataTable(el, dtOpts);
+                site.loading(false);
+                if (dtMap.has(type)) {
+                    dtMap.get(type).push(table);
+                } else {
+                    dtMap.set(type, [table]);
+                }
+                initSelectListeners(type);
+            }
+
+            if (dtToLoad === "albumEntries") {
+                document.querySelectorAll("#albumTabContent .datatables").forEach(e => loadDt(e));
+            } else {
+                $(".datatables").each(async function() {
+                    await loadDt($(this)[0]);
+                });
+                if (!dz) {
+                    initDropzone();
+                }
+            }
+        }
 
         document.getElementById("deleteBucket")?.addEventListener("click", async () => {
-            const confirmation = confirm("Are you sure you want to delete this bucket? all files associated with it will also be deleted");
-            if (!confirmation) {
+            async function yes() {
+                let resp;
+                try {
+                    site.loading(true);
+                    resp = await fetch(`${baseUrl}/bucket/${bucketId}`, {
+                        method: "DELETE"
+                    });
+                    if (!resp.ok) {
+                        const err = await resp.json();
+                        const errModal = createErrorModal('deleteBucketErrModal', `error ${err.status} - ${err.message}`);
+                        errModal.show();
+                        return;
+                    }
+                } finally {
+                    site.loading(false);
+                }
+                window.location.replace(mainRul);
+            }
+
+            async function no() {
                 return;
             }
-            const resp = await fetch(`${baseUrl}/bucket/${bucketId}`, {
-                method: "DELETE"
-            });
-            if (!resp.ok) {
-                const err = await resp.json();
-                alert(`error ${err.status} - ${err.message}`);
-                return;
+
+            const modalElt = createBasicModal("deleteBucketModal", "Delete Bucket", "Are you sure you want to delete this bucket?<br/>All files associated with it will also be deleted.", "Yes", yes, "btn-danger", "No", no, "btn-secondary");
+            modalElt.show();
+        });
+
+        document.getElementById("createAlbum")?.addEventListener("click", async () => {
+            async function yes() {
+                const albumName = document.getElementById("newAlbumName");
+                let resp;
+                try {
+                    site.loading(true);
+                    resp = await fetch(`${baseUrl}/album/${bucketId}`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ name: albumName.value })
+                    });
+                    if (!resp.ok) {
+                        const err = await resp.json();
+                        const errModal = createErrorModal('createAlbumErrModal', `error ${err.status} - ${err.message}`);
+                        errModal.show();
+                        return;
+                    }
+                } finally {
+                    site.loading(false);
+                }
+                await buildAddTo();
+                const albumObj = await resp.json();
+                await buildAlbumTabs();
+                loadDt("albumEntries");
+                await buildAddTo();
+                linkAlbumButtons();
             }
-            await resp.text();
-            window.location.replace(mainRul);
+
+            const getnameModal = createBasicModal("getAlbumNameModal", "Album Name", "<form><label for=\"newAlbumName\" class=\"form-label\">Enter New Album Name</label><input type=\"text\" class=\"form-control\" id=\"newAlbumName\"></form>", "Create Album", yes, "btn-primary");
+            getnameModal.show();
+        });
+
+        if (bucketId) {
+            await buildAlbumTabs();
+            loadDt();
+            if (bucketAlbums && bucketAlbums.length > 0) {
+                resize("albumEntries");
+            }
+            await buildAddTo();
+            linkAlbumButtons();
+        } else {
+            loadDt();
+        }
+
+        document.getElementById("selectAll").addEventListener("click", function () {
+            const dt = dtMap.get("entries")[0];
+            if (this.checked) {
+                dt.rows().select();
+            } else {
+                dt.rows().deselect();
+            }
         });
     });
 </script>
